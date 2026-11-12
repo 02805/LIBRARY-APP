@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>School Library System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav>
+        <a href="/dashboard" style="text-decoration: none; color: white;"><h1>📚 School Library</h1></a>
+        
+        <div class="dropdown">
+            <button class="dropbtn">⋮ Menu</button>
+            <div class="dropdown-content">
+                <a href="/dashboard">📊 Dashboard</a>
+                <a href="/books">📖 Books</a>
+                <a href="/students">🎓 Students</a>
+                <a href="/teachers">👨‍🏫 Teachers</a>
+                <a href="/loans">🔄 Loans</a>
+                <a href="/reservations">📌 Reservations</a>
+                <a href="/import_data">📁 Import Data</a>
+                <a href="/reports">📈 Reports</a>
+                
+                <hr style="margin: 5px 0; border: 0; border-top: 1px solid #ccc;">
+                
+                <a href="/profile">👤 My Profile</a>
+                <a href="/logout" style="color: #e74c3c; font-weight: bold;">🚪 Logout</a>
+            </div>
+        </div>
+    </nav>
+    
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Support Footer -->
+    <footer style="text-align: center; padding: 30px 20px; margin-top: 50px; color: #777; font-size: 14px; border-top: 1px solid #ddd; background: white;">
+        <p style="margin-bottom: 10px; font-weight: bold; color: #2c3e50;">Need Help? Contact Support</p>
+        <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
+            <span>📧 <a href="mailto:shmwjnr@gmail.com" style="color: #3498db; text-decoration: none; font-weight: bold;">shmwjnr@gmail.com</a></span>
+            <span>📱 <a href="https://wa.me/250794664459" target="_blank" style="color: #27ae60; text-decoration: none; font-weight: bold;">+250 794 664 459 (WhatsApp)</a></span>
+        </div>
+        <p style="margin-top: 20px; font-size: 12px; color: #aaa;">&copy; 2026 School Library System. All rights reserved.</p>
+    </footer>
+
+</body>
+</html>

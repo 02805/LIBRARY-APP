@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>📁 Import Data from Excel/CSV</h2>
+
+{% if request.args.get('success') %}
+<div style="background:#d4edda; color:#155724; padding:15px; border-radius:5px; margin-bottom:20px;">
+    ✅ File imported successfully!
+</div>
+{% endif %}
+
+<div style="display:flex; gap:20px; flex-wrap:wrap;">
+
+    <!-- STANDARD IMPORT -->
+    <div class="add-form" style="display:block; flex:1; min-width:300px;">
+        <h3>Standard Import</h3>
+        <p style="font-size:12px; color:gray; margin-bottom:15px;">Use this for normal student lists.</p>
+        <form method="POST" enctype="multipart/form-data">
+            <div style="margin-bottom: 15px;">
+                <select name="import_type" style="padding:10px; width:100%;">
+                    <option value="books">Books List</option>
+                    <option value="students">Students List</option>
+                </select>
+            </div>
+            <input type="file" name="file" accept=".csv" required style="margin-bottom:15px; width:100%;"><br>
+            <button type="submit" style="background:#3498db; width:100%;">Upload Standard CSV</button>
+        </form>
+    </div>
+
+    <!-- GENERATE CODES IMPORT -->
+    <div class="add-form" style="display:block; flex:1; min-width:300px; border: 2px solid #8e44ad; background:#f9f0ff;">
+        <h3 style="color:#8e44ad;">✨ Auto-Generate Codes</h3>
+        <p style="font-size:12px; color:gray; margin-bottom:15px;">Upload a file with Title, Author, ISBN, and Total Quantity. The system will create separate books with codes (e.g., MA 01, MA 02).</p>
+        <form method="POST" action="/import_generate_codes" enctype="multipart/form-data">
+            <input type="file" name="file" accept=".csv" required style="margin-bottom:15px; width:100%;"><br>
+            <button type="submit" style="background:#8e44ad; width:100%;">Generate Codes & Import</button>
+        </form>
+    </div>
+
+</div>
+
+<div style="background:white; padding:20px; border-radius:8px; margin-top:20px;">
+    <h3>CSV File Format Guide:</h3>
+    <p><strong>For Standard Books:</strong> Title, Author, ISBN, Quantity</p>
+    <p><strong>For Students:</strong> Name, Class, Roll No</p>
+</div>
+{% endblock %}

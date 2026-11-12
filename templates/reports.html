@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h2>📊 Library Reports & Analytics</h2>
+    <a href="/export_monthly" style="background:#8e44ad; color:white; padding:10px 15px; text-decoration:none; border-radius:5px; font-weight:bold;">⬇️ Download Monthly Report (CSV)</a>
+</div>
+
+<div class="cards" style="margin-bottom: 30px;">
+    <div class="card">
+        <h3 style="color:#e74c3c;">{{ overdue|length }}</h3>
+        <p>Overdue Books</p>
+    </div>
+    <div class="card">
+        <h3 style="color:#27ae60;">{{ monthly_count }}</h3>
+        <p>Books Issued This Month</p>
+    </div>
+</div>
+
+<h3 style="margin-bottom: 15px; color: #2c3e50;">🏆 Top Readers & Books</h3>
+<div class="cards" style="margin-bottom: 40px; flex-wrap: wrap;">
+    <div class="card" style="border-top: 4px solid #3498db;">
+        <h4 style="color: #777; font-size: 12px; text-transform: uppercase;">Most Borrowed Book</h4>
+        {% if most_borrowed %}<h3 style="font-size: 20px; color: #3498db; margin: 10px 0;">{{ most_borrowed.title }}</h3><p>Borrowed {{ most_borrowed.borrow_count }} times</p>{% else %}<p style="margin-top: 20px;">No data</p>{% endif %}
+    </div>
+    <div class="card" style="border-top: 4px solid #e67e22;">
+        <h4 style="color: #777; font-size: 12px; text-transform: uppercase;">Most Active Class</h4>
+        {% if active_class %}<h3 style="font-size: 20px; color: #e67e22; margin: 10px 0;">Class {{ active_class.class_name }}</h3><p>{{ active_class.borrow_count }} books borrowed</p>{% else %}<p style="margin-top: 20px;">No data</p>{% endif %}
+    </div>
+    <div class="card" style="border-top: 4px solid #27ae60;">
+        <h4 style="color: #777; font-size: 12px; text-transform: uppercase;">Top Student</h4>
+        {% if top_student %}<h3 style="font-size: 20px; color: #27ae60; margin: 10px 0;">{{ top_student.name }}</h3><p>{{ top_student.borrow_count }} books (Class: {{ top_student.class_name }})</p>{% else %}<p style="margin-top: 20px;">No data</p>{% endif %}
+    </div>
+    <div class="card" style="border-top: 4px solid #8e44ad;">
+        <h4 style="color: #777; font-size: 12px; text-transform: uppercase;">Top Teacher</h4>
+        {% if top_teacher %}<h3 style="font-size: 20px; color: #8e44ad; margin: 10px 0;">{{ top_teacher.name }}</h3><p>{{ top_teacher.borrow_count }} books (Dept: {{ top_teacher.department }})</p>{% else %}<p style="margin-top: 20px;">No data</p>{% endif %}
+    </div>
+</div>
+
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+    <h3 style="color:#e74c3c; margin: 0;">⚠️ Overdue Books List</h3>
+    <a href="/export_overdue" style="background:#e74c3c; color:white; padding:8px 12px; text-decoration:none; border-radius:5px; font-weight:bold; font-size: 14px;">⬇️ Download Overdue List</a>
+</div>
+
+<table>
+    <tr>
+        <th>Book Title</th>
+        <th>Borrower Name</th>
+        <th>Details</th>
+        <th>Due Date</th>
+        <th>Days Late</th>
+        <!-- NEW: Fine Column -->
+        <th>Fine (RWF)</th>
+        <th>Action</th>
+    </tr>
+    {% for item in overdue %}
+    <tr style="background-color: #fdf2f2;">
+        <td style="font-weight:bold;">{{ item.title }}</td>
+        <td>
+            {% if item.student_name %} {{ item.student_name }} {% endif %}
+            {% if item.teacher_name %} {{ item.teacher_name }} {% endif %}
+        </td>
+        <td>
+            {% if item.student_name %} <span style="background:#e8f4f8; padding:3px 8px; border-radius:4px; font-size:12px;">Class: {{ item.class_name }}</span> {% endif %}
+            {% if item.teacher_name %} <span style="background:#f9f0ff; padding:3px 8px; border-radius:4px; font-size:12px;">Teacher</span> {% endif %}
+        </td>
+        <td style="color:red; font-weight:bold;">{{ item.due_date }}</td>
+        
+        <!-- NEW: Display Days Late and Fine -->
+        <td style="color:red; font-weight:bold;">{{ item.days_late }} days</td>
+        <td style="color:#e74c3c; font-weight:bold; font-size:16px;">{{ item.fine }} RWF</td>
+
+        <td>
+            <a href="/return_book/{{ item.id }}" style="color:green; text-decoration:none; font-weight:bold;">Return Now</a>
+        </td>
+    </tr>
+    {% else %}
+    <tr>
+        <td colspan="7" style="text-align:center; padding: 20px;">🎉 No overdue books! Everyone is on time.</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

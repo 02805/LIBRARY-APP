@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>🔄 Issue / Return Books</h2>
+
+<div class="add-form">
+    <form method="POST" action="/issue_book" style="display:flex; gap:10px; width:100%; flex-wrap:wrap;">
+        <select name="book_id" required style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1;">
+            <option value="">-- Select Book --</option>
+            {% for b in books %}
+                <option value="{{ b.id }}">{{ b.title }} {% if b.book_code %}({{ b.book_code }}){% endif %}</option>
+            {% endfor %}
+        </select>
+
+        <select name="borrower_type" id="borrower_type" required style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1;" onchange="toggleBorrower()">
+            <option value="student">Student</option>
+            <option value="teacher">Teacher</option>
+        </select>
+        
+        <select name="student_id" id="student_select" style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1;">
+            <option value="">-- Select Student --</option>
+            {% for s in students %}
+                <option value="{{ s.id }}">{{ s.name }} (Class: {{ s.class_name }})</option>
+            {% endfor %}
+        </select>
+
+        <select name="teacher_id" id="teacher_select" style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1; display:none;">
+            <option value="">-- Select Teacher --</option>
+            {% for t in teachers %}
+                <option value="{{ t.id }}">{{ t.name }} (Dept: {{ t.department }})</option>
+            {% endfor %}
+        </select>
+
+        <button type="submit" style="background:#3498db;">Issue Book</button>
+    </form>
+</div>
+
+<table>
+    <tr>
+        <th>ID</th>
+        <th>Book Title</th>
+        <th>Book Code</th>
+        <th>Borrower Name</th>
+        <th>Details</th>
+        <th>Issue Date</th>
+        <th>Due Date</th>
+        <th>Return Date</th>
+        <th>Status</th>
+        <th>Fine (RWF)</th>
+        <th>Action</th>
+    </tr>
+    {% for loan in loans %}
+    <tr>
+        <td>{{ loan.id }}</td>
+        <td>{{ loan.title }}</td>
+        <td style="font-weight:bold; color:#8e44ad;">{{ loan.book_code or '-' }}</td>
+        <td>
+            {% if loan.student_name %} {{ loan.student_name }} {% endif %}
+            {% if loan.teacher_name %} {{ loan.teacher_name }} {% endif %}
+        </td>
+        <td>
+            {% if loan.student_name %} <span style="background:#e8f4f8; padding:3px 8px; border-radius:4px; font-size:12px;">Student: {{ loan.class_name }}</span> {% endif %}
+            {% if loan.teacher_name %} <span style="background:#f9f0ff; padding:3px 8px; border-radius:4px; font-size:12px;">Teacher</span> {% endif %}
+        </td>
+        <td>{{ loan.issue_date }}</td>
+        <td>{{ loan.due_date }}</td>
+        <td style="font-weight:bold; color: #27ae60;">
+            {% if loan.return_date %}{{ loan.return_date }}{% else %}-{% endif %}
+        </td>
+        <td>
+            {% if loan.status == 'issued' %}
+                <span style="color:orange; font-weight:bold;">Issued</span>
+            {% else %}
+                <span style="color:#27ae60; font-weight:bold;">Returned</span>
+            {% endif %}
+        </td>
+        
+        <!-- NEW: Fine Column -->
+        <td style="font-weight:bold; color: #e74c3c;">
+            {% if loan.fine > 0 %}
+                {{ loan.fine }} RWF
+                <br><span style="font-size:10px; color:gray;">({{ loan.days_late }} days late)</span>
+            {% else %}
+                -
+            {% endif %}
+        </td>
+
+        <td>
+            {% if loan.status == 'issued' %}
+                <a href="/return_book/{{ loan.id }}" style="color:#e74c3c; text-decoration:none; font-weight:bold;">Return</a>
+            {% else %}
+                <span style="color:gray;">Done</span>
+            {% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<script>
+    function toggleBorrower() {
+        var type = document.getElementById("borrower_type").value;
+        var studentSelect = document.getElementById("student_select");
+        var teacherSelect = document.getElementById("teacher_select");
+
+        if (type === "student") {
+            studentSelect.style.display = "block";
+            studentSelect.required = true;
+            teacherSelect.style.display = "none";
+            teacherSelect.required = false;
+            teacherSelect.value = "";
+        } else {
+            studentSelect.style.display = "none";
+            studentSelect.required = false;
+            studentSelect.value = "";
+            teacherSelect.style.display = "block";
+            teacherSelect.required = true;
+        }
+    }
+</script>
+{% endblock %}

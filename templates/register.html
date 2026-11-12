@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Register School - Library System</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="login-box">
+        <h2>🏫 Register Your School</h2>
+        
+        {% if error %}<p style="color:red; margin-bottom: 10px;">{{ error }}</p>{% endif %}
+        
+        <form method="POST">
+            <label style="display:block; text-align:left; font-size:13px; margin-bottom:5px;">School Name</label>
+            <input type="text" name="school_name" placeholder="e.g. Kigali High School" required>
+            
+            <label style="display:block; text-align:left; font-size:13px; margin-bottom:5px;">Librarian Email</label>
+            <input type="email" name="email" placeholder="librarian@school.com" required>
+            
+            <label style="display:block; text-align:left; font-size:13px; margin-bottom:5px;">Create Password</label>
+            <input type="password" name="password" placeholder="********" required>
+            
+            <button type="submit" style="background: #8e44ad; margin-top: 10px;">Request Access</button>
+        </form>
+        
+        <p style="margin-top: 15px; font-size: 13px;">
+            Already approved? <a href="/login" style="color: #3498db;">Login here</a>
+        </p>
+    </div>
+</body>
+</html>
