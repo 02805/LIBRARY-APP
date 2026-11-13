@@ -11,6 +11,9 @@
         {% if error %}<p style="color:red; margin-bottom: 10px;">{{ error }}</p>{% endif %}
         
         <form method="POST">
+            <label style="display:block; text-align:left; font-size:13px; margin-bottom:5px;">Your Name (Librarian)</label>
+            <input type="text" name="librarian_name" placeholder="e.g. Peter" required>
+
             <label style="display:block; text-align:left; font-size:13px; margin-bottom:5px;">School Name</label>
             <input type="text" name="school_name" placeholder="e.g. Kigali High School" required>
             
