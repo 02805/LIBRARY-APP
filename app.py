@@ -425,7 +425,6 @@ def loans():
             ORDER BY loans.id DESC
         ''', (sid,)).fetchall()
         
-    # Calculate fine for each loan
     processed_loans = []
     today = date.today()
     for loan in all_loans:
@@ -564,7 +563,7 @@ def cancel_reservation(id):
     conn.close()
     return redirect(url_for('reservations'))
 
-# ---------- BULK IMPORT ----------
+# ---------- BULK IMPORT (FIXED FOR EXCEL) ----------
 @app.route('/import_data', methods=['GET', 'POST'])
 def import_data():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -575,25 +574,31 @@ def import_data():
         import_type = request.form['import_type']
         
         if file and file.filename.endswith('.csv'):
-            csv_file = TextIOWrapper(file, encoding='utf-8')
-            reader = csv.reader(csv_file)
-            next(reader) 
+            # Read file safely (handles Excel's invisible BOM characters)
+            file_content = file.read().decode('utf-8-sig', errors='ignore')
+            reader = csv.reader(StringIO(file_content))
+            next(reader, None) # Skip header safely
+            
             conn = get_db()
             c = conn.cursor()
             
             if import_type == 'books':
                 for row in reader:
                     if len(row) >= 4: 
-                        c.execute("INSERT INTO books (school_id, title, author, isbn, quantity) VALUES (?, ?, ?, ?, ?)",
-                                  (sid, row[0], row[1], row[2], row[3]))
+                        try:
+                            c.execute("INSERT INTO books (school_id, title, author, isbn, quantity) VALUES (?, ?, ?, ?, ?)",
+                                      (sid, row[0].strip(), row[1].strip(), row[2].strip(), row[3].strip()))
+                        except Exception:
+                            pass
             elif import_type == 'students':
                 for row in reader:
                     if len(row) >= 3:
                         try:
+                            # .strip() removes accidental spaces from Excel
                             c.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (?, ?, ?, ?)",
-                                      (sid, row[0], row[1], row[2]))
+                                      (sid, row[0].strip(), row[1].strip(), row[2].strip()))
                         except sqlite3.IntegrityError:
-                            pass 
+                            pass # Safely skip duplicate roll numbers
             conn.commit()
             conn.close()
             return redirect(url_for('import_data', success='true'))
@@ -606,16 +611,17 @@ def import_generate_codes():
         
     file = request.files['file']
     if file and file.filename.endswith('.csv'):
-        csv_file = TextIOWrapper(file, encoding='utf-8')
-        reader = csv.reader(csv_file)
-        next(reader) 
+        # Read file safely (handles Excel's invisible BOM characters)
+        file_content = file.read().decode('utf-8-sig', errors='ignore')
+        reader = csv.reader(StringIO(file_content))
+        next(reader, None) 
         conn = get_db()
         c = conn.cursor()
         
         for row in reader:
             if len(row) >= 4:
-                title, author, isbn = row[0], row[1], row[2]
-                try: quantity = int(row[3])
+                title, author, isbn = row[0].strip(), row[1].strip(), row[2].strip()
+                try: quantity = int(row[3].strip())
                 except ValueError: quantity = 0
                 prefix = title[:2].upper() 
                 for i in range(1, quantity + 1):
