@@ -12,7 +12,7 @@ app.secret_key = 'school_library_secret_key'
 # ===================================================================
 # ⚠️ PASTE YOUR REAL SUPABASE LINK HERE (WITH YOUR PASSWORD)
 # ===================================================================
-DATABASE_URL = "postgresql://postgres:Gasangeishimweathanase%402005@db.uftylmfusipvipdvburd.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:GasangeLibrary2026!@db.uftylmfusipvipdvburd.supabase.co:5432/postgres"
 # ===================================================================
 
 def get_db():
@@ -202,7 +202,7 @@ def delete_school(id):
     conn.close()
     return redirect(url_for('admin_dashboard'))
 
-# ---------- DASHBOARD ----------
+# ---------- DASHBOARD (FIXED FOR POSTGRESQL) ----------
 @app.route('/dashboard')
 def dashboard():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -213,7 +213,7 @@ def dashboard():
     
     if sid == 0:
         c.execute("SELECT SUM(quantity) FROM books")
-        book_count = c.fetchone()[0] or 0
+        book_count = c.fetchone()[0] or 0  # The 'or 0' fixes the crash
         c.execute("SELECT COUNT(*) FROM students")
         student_count = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM teachers")
@@ -225,7 +225,7 @@ def dashboard():
         overdue_count = c.fetchone()[0]
     else:
         c.execute("SELECT SUM(quantity) FROM books WHERE school_id=%s", (sid,))
-        book_count = c.fetchone()[0] or 0
+        book_count = c.fetchone()[0] or 0  # The 'or 0' fixes the crash
         c.execute("SELECT COUNT(*) FROM students WHERE school_id=%s", (sid,))
         student_count = c.fetchone()[0]
         c.execute("SELECT COUNT(*) FROM teachers WHERE school_id=%s", (sid,))
@@ -777,59 +777,3 @@ def export_overdue():
         days_late = (date.today() - due_date_obj).days
         fine = days_late * 100
         cw.writerow([row['title'], borrower, detail, row['due_date'], days_late, fine])
-    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=overdue_books.csv"})
-
-@app.route('/export_monthly')
-def export_monthly():
-    if 'school_id' not in session: return redirect(url_for('login'))
-    sid = session['school_id']
-    conn = get_db()
-    c = conn.cursor()
-    current_month = date.today().strftime("%Y-%m")
-    c.execute("SELECT loans.issue_date, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id=%s AND loans.issue_date LIKE %s ORDER BY loans.issue_date DESC", (sid, f"{current_month}%"))
-    monthly_loans = c.fetchall()
-    conn.close()
-    
-    si = StringIO()
-    cw = csv.writer(si)
-    cw.writerow(['Issue Date', 'Book Title', 'Book Code', 'Borrower Name', 'Borrower Details'])
-    for row in monthly_loans:
-        borrower = row['student_name'] if row['student_name'] else row['teacher_name']
-        detail = f"Class {row['class_name']}" if row['class_name'] else f"Teacher ({row['department']})"
-        cw.writerow([row['issue_date'], row['title'], row['book_code'] or '-', borrower, detail])
-    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=monthly_report.csv"})
-
-# ---------- PROFILE ----------
-@app.route('/profile')
-def profile():
-    if 'school_id' not in session: return redirect(url_for('login'))
-    if session['school_id'] == 0: return redirect(url_for('admin_dashboard'))
-    
-    sid = session['school_id']
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT librarian_name, school_name, email, password FROM librarians WHERE id=%s", (sid,))
-    user = c.fetchone()
-    conn.close()
-    
-    return render_template('profile.html', user=user)
-
-@app.route('/update_password', methods=['POST'])
-def update_password():
-    if 'school_id' not in session or session['school_id'] == 0: return redirect(url_for('login'))
-    
-    new_password = request.form['new_password']
-    sid = session['school_id']
-    
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("UPDATE librarians SET password=%s WHERE id=%s", (new_password, sid))
-    conn.commit()
-    conn.close()
-    
-    return redirect(url_for('profile'))
-
-# ---------- RUN ----------
-if __name__ == '__main__':
-    init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
