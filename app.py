@@ -1,19 +1,32 @@
 from flask import Flask, render_template, request, redirect, url_for, session, Response
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import csv
-from io import TextIOWrapper, StringIO
+from io import StringIO
 from datetime import date, timedelta
+import os
 
 app = Flask(__name__)
 app.secret_key = 'school_library_secret_key'
 
+# ===================================================================
+# ⚠️ PASTE YOUR REAL SUPABASE LINK HERE (WITH YOUR PASSWORD)
+# ===================================================================
+DATABASE_URL = "postgresql://postgres:Gasangeishimweathanase%402005@db.uftylmfusipvipdvburd.supabase.co:5432/postgres"
+# ===================================================================
+
+def get_db():
+    conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+    conn.cursor_factory = psycopg2.extras.DictCursor
+    return conn
+
 # ---------- DATABASE SETUP ----------
 def init_db():
-    conn = sqlite3.connect('library.db')
+    conn = get_db()
     c = conn.cursor()
     
     c.execute('''CREATE TABLE IF NOT EXISTS librarians (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         librarian_name TEXT,
         school_name TEXT NOT NULL,
         email TEXT UNIQUE NOT NULL,
@@ -22,7 +35,7 @@ def init_db():
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS books (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         school_id INTEGER,
         title TEXT NOT NULL,
         author TEXT NOT NULL,
@@ -33,7 +46,7 @@ def init_db():
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         school_id INTEGER,
         name TEXT NOT NULL,
         class_name TEXT,
@@ -41,14 +54,14 @@ def init_db():
     )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS teachers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         school_id INTEGER,
         name TEXT NOT NULL,
         department TEXT
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS loans (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         school_id INTEGER,
         book_id INTEGER,
         student_id INTEGER,
@@ -60,7 +73,7 @@ def init_db():
     )''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS reservations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         school_id INTEGER,
         book_id INTEGER,
         student_id INTEGER,
@@ -69,19 +82,15 @@ def init_db():
     )''')
     
     c.execute('''CREATE TABLE IF NOT EXISTS admins (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         username TEXT UNIQUE,
         password TEXT
     )''')
-    c.execute("INSERT OR IGNORE INTO admins (username, password) VALUES ('admin', 'admin123')")
+    
+    c.execute("INSERT INTO admins (username, password) VALUES ('admin', 'admin123') ON CONFLICT (username) DO NOTHING")
     
     conn.commit()
     conn.close()
-
-def get_db():
-    conn = sqlite3.connect('library.db')
-    conn.row_factory = sqlite3.Row
-    return conn
 
 # ---------- AUTHENTICATION ----------
 
@@ -97,7 +106,9 @@ def login():
         
         if email == 'superadmin':
             conn = get_db()
-            admin = conn.execute("SELECT * FROM admins WHERE username='admin' AND password=?", (password,)).fetchone()
+            c = conn.cursor()
+            c.execute("SELECT * FROM admins WHERE username='admin' AND password=%s", (password,))
+            admin = c.fetchone()
             conn.close()
             if admin:
                 session['school_id'] = 0
@@ -107,7 +118,9 @@ def login():
             return render_template('login.html', error='Invalid Master Password')
             
         conn = get_db()
-        librarian = conn.execute("SELECT * FROM librarians WHERE email=? AND password=?", (email, password)).fetchone()
+        c = conn.cursor()
+        c.execute("SELECT * FROM librarians WHERE email=%s AND password=%s", (email, password))
+        librarian = c.fetchone()
         conn.close()
         
         if librarian:
@@ -132,12 +145,14 @@ def register():
         password = request.form['password']
         
         conn = get_db()
+        c = conn.cursor()
         try:
-            conn.execute("INSERT INTO librarians (librarian_name, school_name, email, password) VALUES (?, ?, ?, ?)", 
+            c.execute("INSERT INTO librarians (librarian_name, school_name, email, password) VALUES (%s, %s, %s, %s)", 
                          (librarian_name, school_name, email, password))
             conn.commit()
             return render_template('login.html', success='Account created! Please wait for the Super Admin to approve you.')
-        except sqlite3.IntegrityError:
+        except psycopg2.IntegrityError:
+            conn.rollback()
             return render_template('register.html', error='Email already exists.')
         finally:
             conn.close()
@@ -153,8 +168,11 @@ def logout():
 def admin_dashboard():
     if 'school_id' not in session or session['school_id'] != 0: return redirect(url_for('login'))
     conn = get_db()
-    pending = conn.execute("SELECT * FROM librarians WHERE status='pending'").fetchall()
-    approved = conn.execute("SELECT * FROM librarians WHERE status='approved'").fetchall()
+    c = conn.cursor()
+    c.execute("SELECT * FROM librarians WHERE status='pending'")
+    pending = c.fetchall()
+    c.execute("SELECT * FROM librarians WHERE status='approved'")
+    approved = c.fetchall()
     conn.close()
     return render_template('admin_dashboard.html', pending=pending, approved=approved)
 
@@ -162,7 +180,8 @@ def admin_dashboard():
 def approve_school(id):
     if 'school_id' not in session or session['school_id'] != 0: return redirect(url_for('login'))
     conn = get_db()
-    conn.execute("UPDATE librarians SET status='approved' WHERE id=?", (id,))
+    c = conn.cursor()
+    c.execute("UPDATE librarians SET status='approved' WHERE id=%s", (id,))
     conn.commit()
     conn.close()
     return redirect(url_for('admin_dashboard'))
@@ -172,12 +191,13 @@ def delete_school(id):
     if 'school_id' not in session or session['school_id'] != 0: return redirect(url_for('login'))
     
     conn = get_db()
-    conn.execute("DELETE FROM librarians WHERE id=?", (id,))
-    conn.execute("DELETE FROM books WHERE school_id=?", (id,))
-    conn.execute("DELETE FROM students WHERE school_id=?", (id,))
-    conn.execute("DELETE FROM teachers WHERE school_id=?", (id,))
-    conn.execute("DELETE FROM loans WHERE school_id=?", (id,))
-    conn.execute("DELETE FROM reservations WHERE school_id=?", (id,))
+    c = conn.cursor()
+    c.execute("DELETE FROM librarians WHERE id=%s", (id,))
+    c.execute("DELETE FROM books WHERE school_id=%s", (id,))
+    c.execute("DELETE FROM students WHERE school_id=%s", (id,))
+    c.execute("DELETE FROM teachers WHERE school_id=%s", (id,))
+    c.execute("DELETE FROM loans WHERE school_id=%s", (id,))
+    c.execute("DELETE FROM reservations WHERE school_id=%s", (id,))
     conn.commit()
     conn.close()
     return redirect(url_for('admin_dashboard'))
@@ -189,21 +209,32 @@ def dashboard():
         
     sid = session['school_id']
     conn = get_db()
+    c = conn.cursor()
     
     if sid == 0:
-        book_count = conn.execute("SELECT SUM(quantity) FROM books").fetchone()[0] or 0
-        student_count = conn.execute("SELECT COUNT(*) FROM students").fetchone()[0]
-        teacher_count = conn.execute("SELECT COUNT(*) FROM teachers").fetchone()[0]
-        loan_count = conn.execute("SELECT COUNT(*) FROM loans WHERE status='issued'").fetchone()[0]
+        c.execute("SELECT SUM(quantity) FROM books")
+        book_count = c.fetchone()[0] or 0
+        c.execute("SELECT COUNT(*) FROM students")
+        student_count = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM teachers")
+        teacher_count = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM loans WHERE status='issued'")
+        loan_count = c.fetchone()[0]
         today_str = date.today().strftime("%Y-%m-%d")
-        overdue_count = conn.execute("SELECT COUNT(*) FROM loans WHERE status='issued' AND due_date < ?", (today_str,)).fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM loans WHERE status='issued' AND due_date < %s", (today_str,))
+        overdue_count = c.fetchone()[0]
     else:
-        book_count = conn.execute("SELECT SUM(quantity) FROM books WHERE school_id=?", (sid,)).fetchone()[0] or 0
-        student_count = conn.execute("SELECT COUNT(*) FROM students WHERE school_id=?", (sid,)).fetchone()[0]
-        teacher_count = conn.execute("SELECT COUNT(*) FROM teachers WHERE school_id=?", (sid,)).fetchone()[0]
-        loan_count = conn.execute("SELECT COUNT(*) FROM loans WHERE school_id=? AND status='issued'", (sid,)).fetchone()[0]
+        c.execute("SELECT SUM(quantity) FROM books WHERE school_id=%s", (sid,))
+        book_count = c.fetchone()[0] or 0
+        c.execute("SELECT COUNT(*) FROM students WHERE school_id=%s", (sid,))
+        student_count = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM teachers WHERE school_id=%s", (sid,))
+        teacher_count = c.fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM loans WHERE school_id=%s AND status='issued'", (sid,))
+        loan_count = c.fetchone()[0]
         today_str = date.today().strftime("%Y-%m-%d")
-        overdue_count = conn.execute("SELECT COUNT(*) FROM loans WHERE school_id=? AND status='issued' AND due_date < ?", (sid, today_str)).fetchone()[0]
+        c.execute("SELECT COUNT(*) FROM loans WHERE school_id=%s AND status='issued' AND due_date < %s", (sid, today_str))
+        overdue_count = c.fetchone()[0]
     
     conn.close()
     return render_template('dashboard.html', books=book_count, students=student_count, teachers=teacher_count, loans=loan_count, overdue=overdue_count)
@@ -216,16 +247,18 @@ def books():
     search_query = request.args.get('search', '')
     
     conn = get_db()
+    c = conn.cursor()
     if sid == 0:
         if search_query:
-            all_books = conn.execute("SELECT * FROM books WHERE title LIKE ? OR author LIKE ?", ('%' + search_query + '%', '%' + search_query + '%')).fetchall()
+            c.execute("SELECT * FROM books WHERE title ILIKE %s OR author ILIKE %s", ('%' + search_query + '%', '%' + search_query + '%'))
         else:
-            all_books = conn.execute("SELECT * FROM books").fetchall()
+            c.execute("SELECT * FROM books")
     else:
         if search_query:
-            all_books = conn.execute("SELECT * FROM books WHERE school_id=? AND (title LIKE ? OR author LIKE ?)", (sid, '%' + search_query + '%', '%' + search_query + '%')).fetchall()
+            c.execute("SELECT * FROM books WHERE school_id=%s AND (title ILIKE %s OR author ILIKE %s)", (sid, '%' + search_query + '%', '%' + search_query + '%'))
         else:
-            all_books = conn.execute("SELECT * FROM books WHERE school_id=?", (sid,)).fetchall()
+            c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
+    all_books = c.fetchall()
     conn.close()
     return render_template('books.html', books=all_books, search_query=search_query)
 
@@ -245,7 +278,7 @@ def add_book():
     
     for i in range(1, quantity + 1):
         book_code = f"{prefix} {i:02d}"
-        c.execute("INSERT INTO books (school_id, title, author, isbn, quantity, book_code, condition) VALUES (?, ?, ?, ?, 1, ?, 'Good')",
+        c.execute("INSERT INTO books (school_id, title, author, isbn, quantity, book_code, condition) VALUES (%s, %s, %s, %s, 1, %s, 'Good')",
                   (sid, title, author, isbn, book_code))
                   
     conn.commit()
@@ -256,16 +289,18 @@ def add_book():
 def edit_book(id):
     if 'school_id' not in session: return redirect(url_for('login'))
     conn = get_db()
+    c = conn.cursor()
     
     if request.method == 'POST':
-        conn.execute("UPDATE books SET title=?, author=?, isbn=?, quantity=?, book_code=?, condition=? WHERE id=?",
+        c.execute("UPDATE books SET title=%s, author=%s, isbn=%s, quantity=%s, book_code=%s, condition=%s WHERE id=%s",
                      (request.form['title'], request.form['author'], request.form['isbn'], request.form['quantity'], 
                       request.form.get('book_code', ''), request.form.get('condition', ''), id))
         conn.commit()
         conn.close()
         return redirect(url_for('books'))
         
-    book = conn.execute("SELECT * FROM books WHERE id=?", (id,)).fetchone()
+    c.execute("SELECT * FROM books WHERE id=%s", (id,))
+    book = c.fetchone()
     conn.close()
     return render_template('edit_book.html', book=book)
 
@@ -273,7 +308,8 @@ def edit_book(id):
 def delete_book(id):
     if 'school_id' not in session: return redirect(url_for('login'))
     conn = get_db()
-    conn.execute("DELETE FROM books WHERE id=?", (id,))
+    c = conn.cursor()
+    c.execute("DELETE FROM books WHERE id=%s", (id,))
     conn.commit()
     conn.close()
     return redirect(url_for('books'))
@@ -283,11 +319,13 @@ def export_books():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     conn = get_db()
+    c = conn.cursor()
     
     if sid == 0:
-        books = conn.execute("SELECT * FROM books").fetchall()
+        c.execute("SELECT * FROM books")
     else:
-        books = conn.execute("SELECT * FROM books WHERE school_id=?", (sid,)).fetchall()
+        c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
+    books = c.fetchall()
     conn.close()
     
     si = StringIO()
@@ -305,16 +343,18 @@ def students():
     search_query = request.args.get('search', '')
     
     conn = get_db()
+    c = conn.cursor()
     if sid == 0:
         if search_query:
-            all_students = conn.execute("SELECT * FROM students WHERE name LIKE ? OR roll_no LIKE ?", ('%' + search_query + '%', '%' + search_query + '%')).fetchall()
+            c.execute("SELECT * FROM students WHERE name ILIKE %s OR roll_no ILIKE %s", ('%' + search_query + '%', '%' + search_query + '%'))
         else:
-            all_students = conn.execute("SELECT * FROM students").fetchall()
+            c.execute("SELECT * FROM students")
     else:
         if search_query:
-            all_students = conn.execute("SELECT * FROM students WHERE school_id=? AND (name LIKE ? OR roll_no LIKE ?)", (sid, '%' + search_query + '%', '%' + search_query + '%')).fetchall()
+            c.execute("SELECT * FROM students WHERE school_id=%s AND (name ILIKE %s OR roll_no ILIKE %s)", (sid, '%' + search_query + '%', '%' + search_query + '%'))
         else:
-            all_students = conn.execute("SELECT * FROM students WHERE school_id=?", (sid,)).fetchall()
+            c.execute("SELECT * FROM students WHERE school_id=%s", (sid,))
+    all_students = c.fetchall()
     conn.close()
     return render_template('students.html', students=all_students, search_query=search_query)
 
@@ -323,12 +363,13 @@ def add_student():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id'] if session['school_id'] != 0 else 999
     conn = get_db()
+    c = conn.cursor()
     try:
-        conn.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (?, ?, ?, ?)",
+        c.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (%s, %s, %s, %s)",
                      (sid, request.form['name'], request.form['class_name'], request.form['roll_no']))
         conn.commit()
-    except sqlite3.IntegrityError:
-        pass
+    except psycopg2.IntegrityError:
+        conn.rollback()
     conn.close()
     return redirect(url_for('students'))
 
@@ -336,9 +377,11 @@ def add_student():
 def delete_student(id):
     if 'school_id' not in session: return redirect(url_for('login'))
     conn = get_db()
-    active_loan = conn.execute("SELECT id FROM loans WHERE student_id=? AND status='issued'", (id,)).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT id FROM loans WHERE student_id=%s AND status='issued'", (id,))
+    active_loan = c.fetchone()
     if not active_loan:
-        conn.execute("DELETE FROM students WHERE id=?", (id,))
+        c.execute("DELETE FROM students WHERE id=%s", (id,))
         conn.commit()
     conn.close()
     return redirect(url_for('students'))
@@ -351,16 +394,18 @@ def teachers():
     search_query = request.args.get('search', '')
     
     conn = get_db()
+    c = conn.cursor()
     if sid == 0:
         if search_query:
-            all_teachers = conn.execute("SELECT * FROM teachers WHERE name LIKE ? OR department LIKE ?", ('%' + search_query + '%', '%' + search_query + '%')).fetchall()
+            c.execute("SELECT * FROM teachers WHERE name ILIKE %s OR department ILIKE %s", ('%' + search_query + '%', '%' + search_query + '%'))
         else:
-            all_teachers = conn.execute("SELECT * FROM teachers").fetchall()
+            c.execute("SELECT * FROM teachers")
     else:
         if search_query:
-            all_teachers = conn.execute("SELECT * FROM teachers WHERE school_id=? AND (name LIKE ? OR department LIKE ?)", (sid, '%' + search_query + '%', '%' + search_query + '%')).fetchall()
+            c.execute("SELECT * FROM teachers WHERE school_id=%s AND (name ILIKE %s OR department ILIKE %s)", (sid, '%' + search_query + '%', '%' + search_query + '%'))
         else:
-            all_teachers = conn.execute("SELECT * FROM teachers WHERE school_id=?", (sid,)).fetchall()
+            c.execute("SELECT * FROM teachers WHERE school_id=%s", (sid,))
+    all_teachers = c.fetchall()
     conn.close()
     return render_template('teachers.html', teachers=all_teachers, search_query=search_query)
 
@@ -369,7 +414,8 @@ def add_teacher():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id'] if session['school_id'] != 0 else 999
     conn = get_db()
-    conn.execute("INSERT INTO teachers (school_id, name, department) VALUES (?, ?, ?)", 
+    c = conn.cursor()
+    c.execute("INSERT INTO teachers (school_id, name, department) VALUES (%s, %s, %s)", 
                  (sid, request.form['name'], request.form['department']))
     conn.commit()
     conn.close()
@@ -379,9 +425,11 @@ def add_teacher():
 def delete_teacher(id):
     if 'school_id' not in session: return redirect(url_for('login'))
     conn = get_db()
-    active_loan = conn.execute("SELECT id FROM loans WHERE teacher_id=? AND status='issued'", (id,)).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT id FROM loans WHERE teacher_id=%s AND status='issued'", (id,))
+    active_loan = c.fetchone()
     if not active_loan:
-        conn.execute("DELETE FROM teachers WHERE id=?", (id,))
+        c.execute("DELETE FROM teachers WHERE id=%s", (id,))
         conn.commit()
     conn.close()
     return redirect(url_for('teachers'))
@@ -392,12 +440,16 @@ def loans():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     conn = get_db()
+    c = conn.cursor()
     
     if sid == 0:
-        all_books = conn.execute("SELECT id, title, book_code FROM books WHERE quantity > 0").fetchall()
-        all_students = conn.execute("SELECT * FROM students").fetchall()
-        all_teachers = conn.execute("SELECT * FROM teachers").fetchall()
-        all_loans = conn.execute('''
+        c.execute("SELECT id, title, book_code FROM books WHERE quantity > 0")
+        all_books = c.fetchall()
+        c.execute("SELECT * FROM students")
+        all_students = c.fetchall()
+        c.execute("SELECT * FROM teachers")
+        all_teachers = c.fetchall()
+        c.execute('''
             SELECT loans.id, loans.issue_date, loans.due_date, loans.return_date, loans.status, 
                    books.title, books.book_code, 
                    students.name as student_name, students.class_name,
@@ -407,12 +459,15 @@ def loans():
             LEFT JOIN students ON loans.student_id = students.id
             LEFT JOIN teachers ON loans.teacher_id = teachers.id
             ORDER BY loans.id DESC
-        ''').fetchall()
+        ''')
     else:
-        all_books = conn.execute("SELECT id, title, book_code FROM books WHERE school_id=? AND quantity > 0", (sid,)).fetchall()
-        all_students = conn.execute("SELECT * FROM students WHERE school_id=?", (sid,)).fetchall()
-        all_teachers = conn.execute("SELECT * FROM teachers WHERE school_id=?", (sid,)).fetchall()
-        all_loans = conn.execute('''
+        c.execute("SELECT id, title, book_code FROM books WHERE school_id=%s AND quantity > 0", (sid,))
+        all_books = c.fetchall()
+        c.execute("SELECT * FROM students WHERE school_id=%s", (sid,))
+        all_students = c.fetchall()
+        c.execute("SELECT * FROM teachers WHERE school_id=%s", (sid,))
+        all_teachers = c.fetchall()
+        c.execute('''
             SELECT loans.id, loans.issue_date, loans.due_date, loans.return_date, loans.status, 
                    books.title, books.book_code, 
                    students.name as student_name, students.class_name,
@@ -421,9 +476,10 @@ def loans():
             JOIN books ON loans.book_id = books.id 
             LEFT JOIN students ON loans.student_id = students.id
             LEFT JOIN teachers ON loans.teacher_id = teachers.id
-            WHERE loans.school_id = ?
+            WHERE loans.school_id = %s
             ORDER BY loans.id DESC
-        ''', (sid,)).fetchall()
+        ''', (sid,))
+    all_loans = c.fetchall()
         
     processed_loans = []
     today = date.today()
@@ -462,14 +518,15 @@ def issue_book():
     due = today + timedelta(days=14)
     
     conn = get_db()
+    c = conn.cursor()
     if borrower_type == 'student':
-        conn.execute("INSERT INTO loans (school_id, book_id, student_id, issue_date, due_date, status) VALUES (?, ?, ?, ?, ?, 'issued')",
+        c.execute("INSERT INTO loans (school_id, book_id, student_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')",
                      (sid, book_id, request.form.get('student_id'), today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
     else:
-        conn.execute("INSERT INTO loans (school_id, book_id, teacher_id, issue_date, due_date, status) VALUES (?, ?, ?, ?, ?, 'issued')",
+        c.execute("INSERT INTO loans (school_id, book_id, teacher_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')",
                      (sid, book_id, request.form.get('teacher_id'), today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
                      
-    conn.execute("UPDATE books SET quantity = quantity - 1 WHERE id = ?", (book_id,))
+    c.execute("UPDATE books SET quantity = quantity - 1 WHERE id = %s", (book_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('loans'))
@@ -478,15 +535,18 @@ def issue_book():
 def return_book(id):
     if 'school_id' not in session: return redirect(url_for('login'))
     conn = get_db()
-    loan = conn.execute("SELECT book_id FROM loans WHERE id=?", (id,)).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT book_id FROM loans WHERE id=%s", (id,))
+    loan = c.fetchone()
     
     if loan:
         book_id = loan['book_id']
-        conn.execute("UPDATE loans SET status='returned', return_date=? WHERE id=?", (date.today().strftime("%Y-%m-%d"), id))
-        reservation = conn.execute("SELECT id FROM reservations WHERE book_id=? AND status='pending' ORDER BY id ASC LIMIT 1", (book_id,)).fetchone()
+        c.execute("UPDATE loans SET status='returned', return_date=%s WHERE id=%s", (date.today().strftime("%Y-%m-%d"), id))
+        c.execute("SELECT id FROM reservations WHERE book_id=%s AND status='pending' ORDER BY id ASC LIMIT 1", (book_id,))
+        reservation = c.fetchone()
         if reservation:
-            conn.execute("UPDATE reservations SET status='ready' WHERE id=?", (reservation['id'],))
-        conn.execute("UPDATE books SET quantity = quantity + 1 WHERE id=?", (book_id,))
+            c.execute("UPDATE reservations SET status='ready' WHERE id=%s", (reservation['id'],))
+        c.execute("UPDATE books SET quantity = quantity + 1 WHERE id=%s", (book_id,))
         conn.commit()
     conn.close()
     return redirect(url_for('loans'))
@@ -497,30 +557,36 @@ def reservations():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     conn = get_db()
+    c = conn.cursor()
     
     if sid == 0:
-        all_students = conn.execute("SELECT * FROM students").fetchall()
-        all_books = conn.execute("SELECT * FROM books").fetchall()
-        all_reservations = conn.execute('''
+        c.execute("SELECT * FROM students")
+        all_students = c.fetchall()
+        c.execute("SELECT * FROM books")
+        all_books = c.fetchall()
+        c.execute('''
             SELECT reservations.id, reservations.reserve_date, reservations.status, reservations.book_id, reservations.student_id,
                    books.title, books.book_code, students.name, students.class_name
             FROM reservations
             JOIN books ON reservations.book_id = books.id
             JOIN students ON reservations.student_id = students.id
             ORDER BY reservations.id DESC
-        ''').fetchall()
+        ''')
     else:
-        all_students = conn.execute("SELECT * FROM students WHERE school_id=?", (sid,)).fetchall()
-        all_books = conn.execute("SELECT * FROM books WHERE school_id=?", (sid,)).fetchall()
-        all_reservations = conn.execute('''
+        c.execute("SELECT * FROM students WHERE school_id=%s", (sid,))
+        all_students = c.fetchall()
+        c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
+        all_books = c.fetchall()
+        c.execute('''
             SELECT reservations.id, reservations.reserve_date, reservations.status, reservations.book_id, reservations.student_id,
                    books.title, books.book_code, students.name, students.class_name
             FROM reservations
             JOIN books ON reservations.book_id = books.id
             JOIN students ON reservations.student_id = students.id
-            WHERE reservations.school_id = ?
+            WHERE reservations.school_id = %s
             ORDER BY reservations.id DESC
-        ''', (sid,)).fetchall()
+        ''', (sid,))
+    all_reservations = c.fetchall()
         
     conn.close()
     return render_template('reservations.html', students=all_students, books=all_books, reservations=all_reservations)
@@ -530,7 +596,8 @@ def add_reservation():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id'] if session['school_id'] != 0 else 999
     conn = get_db()
-    conn.execute("INSERT INTO reservations (school_id, book_id, student_id, reserve_date, status) VALUES (?, ?, ?, ?, 'pending')",
+    c = conn.cursor()
+    c.execute("INSERT INTO reservations (school_id, book_id, student_id, reserve_date, status) VALUES (%s, %s, %s, %s, 'pending')",
                  (sid, request.form['book_id'], request.form['student_id'], date.today().strftime("%Y-%m-%d")))
     conn.commit()
     conn.close()
@@ -541,15 +608,17 @@ def issue_reserved(id):
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id'] if session['school_id'] != 0 else 999
     conn = get_db()
-    res = conn.execute("SELECT book_id, student_id FROM reservations WHERE id=?", (id,)).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT book_id, student_id FROM reservations WHERE id=%s", (id,))
+    res = c.fetchone()
     
     if res:
         today = date.today()
         due = today + timedelta(days=14)
-        conn.execute("INSERT INTO loans (school_id, book_id, student_id, issue_date, due_date, status) VALUES (?, ?, ?, ?, ?, 'issued')",
+        c.execute("INSERT INTO loans (school_id, book_id, student_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')",
                      (sid, res['book_id'], res['student_id'], today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
-        conn.execute("UPDATE books SET quantity = quantity - 1 WHERE id=?", (res['book_id'],))
-        conn.execute("DELETE FROM reservations WHERE id=?", (id,))
+        c.execute("UPDATE books SET quantity = quantity - 1 WHERE id=%s", (res['book_id'],))
+        c.execute("DELETE FROM reservations WHERE id=%s", (id,))
         conn.commit()
     conn.close()
     return redirect(url_for('loans'))
@@ -558,12 +627,13 @@ def issue_reserved(id):
 def cancel_reservation(id):
     if 'school_id' not in session: return redirect(url_for('login'))
     conn = get_db()
-    conn.execute("DELETE FROM reservations WHERE id=?", (id,))
+    c = conn.cursor()
+    c.execute("DELETE FROM reservations WHERE id=%s", (id,))
     conn.commit()
     conn.close()
     return redirect(url_for('reservations'))
 
-# ---------- BULK IMPORT (FIXED FOR EXCEL) ----------
+# ---------- BULK IMPORT ----------
 @app.route('/import_data', methods=['GET', 'POST'])
 def import_data():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -574,10 +644,9 @@ def import_data():
         import_type = request.form['import_type']
         
         if file and file.filename.endswith('.csv'):
-            # Read file safely (handles Excel's invisible BOM characters)
             file_content = file.read().decode('utf-8-sig', errors='ignore')
             reader = csv.reader(StringIO(file_content))
-            next(reader, None) # Skip header safely
+            next(reader, None) 
             
             conn = get_db()
             c = conn.cursor()
@@ -586,19 +655,18 @@ def import_data():
                 for row in reader:
                     if len(row) >= 4: 
                         try:
-                            c.execute("INSERT INTO books (school_id, title, author, isbn, quantity) VALUES (?, ?, ?, ?, ?)",
+                            c.execute("INSERT INTO books (school_id, title, author, isbn, quantity) VALUES (%s, %s, %s, %s, %s)",
                                       (sid, row[0].strip(), row[1].strip(), row[2].strip(), row[3].strip()))
                         except Exception:
-                            pass
+                            conn.rollback()
             elif import_type == 'students':
                 for row in reader:
                     if len(row) >= 3:
                         try:
-                            # .strip() removes accidental spaces from Excel
-                            c.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (?, ?, ?, ?)",
+                            c.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (%s, %s, %s, %s)",
                                       (sid, row[0].strip(), row[1].strip(), row[2].strip()))
-                        except sqlite3.IntegrityError:
-                            pass # Safely skip duplicate roll numbers
+                        except psycopg2.IntegrityError:
+                            conn.rollback()
             conn.commit()
             conn.close()
             return redirect(url_for('import_data', success='true'))
@@ -611,7 +679,6 @@ def import_generate_codes():
         
     file = request.files['file']
     if file and file.filename.endswith('.csv'):
-        # Read file safely (handles Excel's invisible BOM characters)
         file_content = file.read().decode('utf-8-sig', errors='ignore')
         reader = csv.reader(StringIO(file_content))
         next(reader, None) 
@@ -626,7 +693,7 @@ def import_generate_codes():
                 prefix = title[:2].upper() 
                 for i in range(1, quantity + 1):
                     book_code = f"{prefix} {i:02d}"
-                    c.execute("INSERT INTO books (school_id, title, author, isbn, quantity, book_code, condition) VALUES (?, ?, ?, ?, 1, ?, 'Good')",
+                    c.execute("INSERT INTO books (school_id, title, author, isbn, quantity, book_code, condition) VALUES (%s, %s, %s, %s, 1, %s, 'Good')",
                               (sid, title, author, isbn, book_code))
         conn.commit()
         conn.close()
@@ -639,13 +706,14 @@ def reports():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     conn = get_db()
+    c = conn.cursor()
     today_str = date.today().strftime("%Y-%m-%d")
     current_month = date.today().strftime("%Y-%m")
 
-    where_clause = "" if sid == 0 else "WHERE loans.school_id = ?"
+    where_clause = "" if sid == 0 else "WHERE loans.school_id = %s"
     params = () if sid == 0 else (sid,)
 
-    overdue_books_raw = conn.execute(f'''
+    c.execute(f'''
         SELECT loans.id, loans.due_date, books.title, 
                students.name as student_name, students.class_name,
                teachers.name as teacher_name
@@ -653,8 +721,9 @@ def reports():
         JOIN books ON loans.book_id = books.id 
         LEFT JOIN students ON loans.student_id = students.id
         LEFT JOIN teachers ON loans.teacher_id = teachers.id
-        {where_clause} {'AND' if sid != 0 else 'WHERE'} loans.status = 'issued' AND loans.due_date < ?
-    ''', (*params, today_str)).fetchall()
+        {where_clause} {'AND' if sid != 0 else 'WHERE'} loans.status = 'issued' AND loans.due_date < %s
+    ''', (*params, today_str))
+    overdue_books_raw = c.fetchall()
 
     overdue_books = []
     today = date.today()
@@ -666,12 +735,20 @@ def reports():
         row_dict['fine'] = days_late * 100
         overdue_books.append(row_dict)
 
-    monthly_issued = conn.execute(f"SELECT COUNT(*) FROM loans {where_clause} {'AND' if sid != 0 else 'WHERE'} issue_date LIKE ?", (*params, f"{current_month}%")).fetchone()[0]
+    c.execute(f"SELECT COUNT(*) FROM loans {where_clause} {'AND' if sid != 0 else 'WHERE'} issue_date LIKE %s", (*params, f"{current_month}%"))
+    monthly_issued = c.fetchone()[0]
 
-    most_borrowed_book = conn.execute(f"SELECT books.title, COUNT(loans.id) as borrow_count FROM loans JOIN books ON loans.book_id = books.id {where_clause} GROUP BY books.title ORDER BY borrow_count DESC LIMIT 1", params).fetchone()
-    most_active_class = conn.execute(f"SELECT students.class_name, COUNT(loans.id) as borrow_count FROM loans JOIN students ON loans.student_id = students.id {where_clause} GROUP BY students.class_name ORDER BY borrow_count DESC LIMIT 1", params).fetchone()
-    top_student = conn.execute(f"SELECT students.name, students.class_name, COUNT(loans.id) as borrow_count FROM loans JOIN students ON loans.student_id = students.id {where_clause} GROUP BY students.id ORDER BY borrow_count DESC LIMIT 1", params).fetchone()
-    top_teacher = conn.execute(f"SELECT teachers.name, teachers.department, COUNT(loans.id) as borrow_count FROM loans JOIN teachers ON loans.teacher_id = teachers.id {where_clause} GROUP BY teachers.id ORDER BY borrow_count DESC LIMIT 1", params).fetchone()
+    c.execute(f"SELECT books.title, COUNT(loans.id) as borrow_count FROM loans JOIN books ON loans.book_id = books.id {where_clause} GROUP BY books.title ORDER BY borrow_count DESC LIMIT 1", params)
+    most_borrowed_book = c.fetchone()
+    
+    c.execute(f"SELECT students.class_name, COUNT(loans.id) as borrow_count FROM loans JOIN students ON loans.student_id = students.id {where_clause} GROUP BY students.class_name ORDER BY borrow_count DESC LIMIT 1", params)
+    most_active_class = c.fetchone()
+    
+    c.execute(f"SELECT students.name, students.class_name, COUNT(loans.id) as borrow_count FROM loans JOIN students ON loans.student_id = students.id {where_clause} GROUP BY students.id, students.name, students.class_name ORDER BY borrow_count DESC LIMIT 1", params)
+    top_student = c.fetchone()
+    
+    c.execute(f"SELECT teachers.name, teachers.department, COUNT(loans.id) as borrow_count FROM loans JOIN teachers ON loans.teacher_id = teachers.id {where_clause} GROUP BY teachers.id, teachers.name, teachers.department ORDER BY borrow_count DESC LIMIT 1", params)
+    top_teacher = c.fetchone()
 
     conn.close()
     return render_template('reports.html', overdue=overdue_books, monthly_count=monthly_issued,
@@ -684,8 +761,10 @@ def export_overdue():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     conn = get_db()
+    c = conn.cursor()
     today_str = date.today().strftime("%Y-%m-%d")
-    overdue_books = conn.execute("SELECT books.title, students.name as student_name, students.class_name, loans.due_date, teachers.name as teacher_name FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id=? AND loans.status = 'issued' AND loans.due_date < ?", (sid, today_str)).fetchall()
+    c.execute("SELECT books.title, students.name as student_name, students.class_name, loans.due_date, teachers.name as teacher_name FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id=%s AND loans.status = 'issued' AND loans.due_date < %s", (sid, today_str))
+    overdue_books = c.fetchall()
     conn.close()
     
     si = StringIO()
@@ -705,8 +784,10 @@ def export_monthly():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     conn = get_db()
+    c = conn.cursor()
     current_month = date.today().strftime("%Y-%m")
-    monthly_loans = conn.execute("SELECT loans.issue_date, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id=? AND loans.issue_date LIKE ? ORDER BY loans.issue_date DESC", (sid, f"{current_month}%")).fetchall()
+    c.execute("SELECT loans.issue_date, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id=%s AND loans.issue_date LIKE %s ORDER BY loans.issue_date DESC", (sid, f"{current_month}%"))
+    monthly_loans = c.fetchall()
     conn.close()
     
     si = StringIO()
@@ -726,7 +807,9 @@ def profile():
     
     sid = session['school_id']
     conn = get_db()
-    user = conn.execute("SELECT librarian_name, school_name, email, password FROM librarians WHERE id=?", (sid,)).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT librarian_name, school_name, email, password FROM librarians WHERE id=%s", (sid,))
+    user = c.fetchone()
     conn.close()
     
     return render_template('profile.html', user=user)
@@ -739,7 +822,8 @@ def update_password():
     sid = session['school_id']
     
     conn = get_db()
-    conn.execute("UPDATE librarians SET password=? WHERE id=?", (new_password, sid))
+    c = conn.cursor()
+    c.execute("UPDATE librarians SET password=%s WHERE id=%s", (new_password, sid))
     conn.commit()
     conn.close()
     
