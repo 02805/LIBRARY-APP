@@ -10,9 +10,9 @@ app = Flask(__name__)
 app.secret_key = 'school_library_secret_key'
 
 # ===================================================================
-# DATABASE CONNECTION (Password set to GasangeLibrary2026!)
+# DATABASE CONNECTION (Password set to GasangeLibrary2026)
 # ===================================================================
-DATABASE_URL = "postgresql://postgres:GasangeLibrary2026!@db.uftylmfusipvipdvburd.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres:GasangeLibrary2026@db.uftylmfusipvipdvburd.supabase.co:5432/postgres"
 # ===================================================================
 
 def get_db():
