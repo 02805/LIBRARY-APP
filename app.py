@@ -10,7 +10,7 @@ app = Flask(__name__)
 app.secret_key = 'school_library_secret_key'
 
 # ===================================================================
-# DATABASE CONNECTION (Using Session Pooler for IPv4 compatibility)
+# DATABASE CONNECTION
 # ===================================================================
 DATABASE_URL = "postgresql://postgres.uftylmfusipvipdvburd:Gasange2026@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
 # ===================================================================
@@ -189,7 +189,6 @@ def approve_school(id):
 @app.route('/delete_school/<int:id>')
 def delete_school(id):
     if 'school_id' not in session or session['school_id'] != 0: return redirect(url_for('login'))
-    
     conn = get_db()
     c = conn.cursor()
     c.execute("DELETE FROM librarians WHERE id=%s", (id,))
@@ -314,6 +313,21 @@ def delete_book(id):
     conn.close()
     return redirect(url_for('books'))
 
+# ---------- NEW: DELETE ALL BOOKS ----------
+@app.route('/delete_all_books')
+def delete_all_books():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    if sid == 0:
+        c.execute("DELETE FROM books")
+    else:
+        c.execute("DELETE FROM books WHERE school_id=%s", (sid,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('books'))
+
 @app.route('/export_books')
 def export_books():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -383,6 +397,21 @@ def delete_student(id):
     if not active_loan:
         c.execute("DELETE FROM students WHERE id=%s", (id,))
         conn.commit()
+    conn.close()
+    return redirect(url_for('students'))
+
+# ---------- NEW: DELETE ALL STUDENTS ----------
+@app.route('/delete_all_students')
+def delete_all_students():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    if sid == 0:
+        c.execute("DELETE FROM students")
+    else:
+        c.execute("DELETE FROM students WHERE school_id=%s", (sid,))
+    conn.commit()
     conn.close()
     return redirect(url_for('students'))
 
