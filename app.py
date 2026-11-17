@@ -10,9 +10,9 @@ app = Flask(__name__)
 app.secret_key = 'school_library_secret_key'
 
 # ===================================================================
-# DATABASE CONNECTION (Password set to Gasange2026)
+# DATABASE CONNECTION (Using Session Pooler for IPv4 compatibility)
 # ===================================================================
-DATABASE_URL = "postgresql://postgres:Gasange2026@db.uftylmfusipvipdvburd.supabase.co:5432/postgres"
+DATABASE_URL = "postgresql://postgres.uftylmfusipvipdvburd:Gasange2026@aws-1-eu-central-1.pooler.supabase.com:5432/postgres"
 # ===================================================================
 
 def get_db():
