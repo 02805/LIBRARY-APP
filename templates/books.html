@@ -46,4 +46,17 @@
     </tr>
     {% endfor %}
 </table>
+
+<!-- Pagination Controls -->
+<div style="display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 20px;">
+    {% if page > 1 %}
+        <a href="/books?page={{ page - 1 }}{% if search_query %}&search={{ search_query }}{% endif %}" style="padding: 8px 15px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">⬅️ Previous</a>
+    {% endif %}
+    
+    <span style="font-weight: bold; color: #555;">Page {{ page }} of {{ total_pages if total_pages > 0 else 1 }}</span>
+    
+    {% if page < total_pages %}
+        <a href="/books?page={{ page + 1 }}{% if search_query %}&search={{ search_query }}{% endif %}" style="padding: 8px 15px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">Next ➡️</a>
+    {% endif %}
+</div>
 {% endblock %}
