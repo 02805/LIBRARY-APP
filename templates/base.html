@@ -5,28 +5,38 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+    <!-- New Top Navigation Bar -->
     <nav>
-        <a href="/dashboard" style="text-decoration: none; color: white;"><h1>📚 School Library</h1></a>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <h1>📚 School Library</h1>
+        </div>
         
-        <div class="dropdown">
-            <button class="dropbtn">⋮ Menu</button>
-            <div class="dropdown-content">
-                <a href="/dashboard">📊 Dashboard</a>
-                <a href="/books">📖 Books</a>
-                <a href="/students">🎓 Students</a>
-                <a href="/teachers">👨‍🏫 Teachers</a>
-                <a href="/loans">🔄 Loans</a>
-                <a href="/reservations">📌 Reservations</a>
-                <a href="/import_data">📁 Import Data</a>
-                <a href="/reports">📈 Reports</a>
-                
-                <hr style="margin: 5px 0; border: 0; border-top: 1px solid #ccc;">
-                
-                <a href="/profile">👤 My Profile</a>
-                <a href="/logout" style="color: #e74c3c; font-weight: bold;">🚪 Logout</a>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end;">
+            <a href="/dashboard" class="nav-btn nav-dash">📊 Dashboard</a>
+            <a href="/books" class="nav-btn nav-books">📖 Books</a>
+            <a href="/students" class="nav-btn nav-students">🎓 Students</a>
+            <a href="/teachers" class="nav-btn nav-teachers">👨‍🏫 Teachers</a>
+            <a href="/loans" class="nav-btn nav-loans">🔄 Loans</a>
+            <a href="/reservations" class="nav-btn nav-res">📌 Reservations</a>
+            <a href="/reports" class="nav-btn nav-reports">📈 Reports</a>
+            <a href="/import_data" class="nav-btn nav-import">📁 Import</a>
+            
+            <!-- Profile and Logout grouped together -->
+            <div style="border-left: 2px solid #4a6278; margin-left: 10px; padding-left: 15px; display: flex; gap: 10px;">
+                <a href="/profile" class="nav-btn" style="background: #555; color: white;">👤 Profile</a>
+                <a href="/logout" class="nav-btn" style="background: #e74c3c; color: white;">🚪 Logout</a>
             </div>
         </div>
     </nav>
+
+    <!-- Moving Welcome Message (Marquee) -->
+    {% if session.get('librarian_name') %}
+    <div class="welcome-banner">
+        <div class="marquee-text">
+            ✨ Hi {{ session['librarian_name'] }}, Welcome to {{ session['school_name'] }} Library! Have a great reading day! ✨
+        </div>
+    </div>
+    {% endif %}
     
     <main>
         {% block content %}{% endblock %}
@@ -41,6 +51,5 @@
         </div>
         <p style="margin-top: 20px; font-size: 12px; color: #aaa;">&copy; 2026 School Library System. All rights reserved.</p>
     </footer>
-
 </body>
 </html>
