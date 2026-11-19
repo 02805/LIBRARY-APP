@@ -5,7 +5,6 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-    <!-- New Top Navigation Bar -->
     <nav>
         <div style="display: flex; align-items: center; gap: 15px;">
             <h1>📚 School Library</h1>
@@ -19,9 +18,9 @@
             <a href="/loans" class="nav-btn nav-loans">🔄 Loans</a>
             <a href="/reservations" class="nav-btn nav-res">📌 Reservations</a>
             <a href="/reports" class="nav-btn nav-reports">📈 Reports</a>
+            <a href="/inventory" class="nav-btn" style="background: #d35400;">📦 Inventory</a>
             <a href="/import_data" class="nav-btn nav-import">📁 Import</a>
             
-            <!-- Profile and Logout grouped together -->
             <div style="border-left: 2px solid #4a6278; margin-left: 10px; padding-left: 15px; display: flex; gap: 10px;">
                 <a href="/profile" class="nav-btn" style="background: #555; color: white;">👤 Profile</a>
                 <a href="/logout" class="nav-btn" style="background: #e74c3c; color: white;">🚪 Logout</a>
@@ -29,7 +28,6 @@
         </div>
     </nav>
 
-    <!-- Moving Welcome Message (Marquee) -->
     {% if session.get('librarian_name') %}
     <div class="welcome-banner">
         <div class="marquee-text">
@@ -42,7 +40,6 @@
         {% block content %}{% endblock %}
     </main>
 
-    <!-- Support Footer -->
     <footer style="text-align: center; padding: 30px 20px; margin-top: 50px; color: #777; font-size: 14px; border-top: 1px solid #ddd; background: white;">
         <p style="margin-bottom: 10px; font-weight: bold; color: #2c3e50;">Need Help? Contact Support</p>
         <div style="display: flex; justify-content: center; gap: 20px; flex-wrap: wrap;">
