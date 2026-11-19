@@ -12,6 +12,8 @@
         <h3 style="color: #2c3e50; font-size: 24px; margin-bottom: 5px;">{{ c.class_name }}</h3>
         <p style="color: #3498db; font-weight: bold; font-size: 18px;">{{ c[1] }} Students</p>
     </a>
+    {% else %}
+    <p style="color: gray; width: 100%; text-align: center; padding: 20px;">No students have been imported yet.</p>
     {% endfor %}
 </div>
 {% endblock %}
