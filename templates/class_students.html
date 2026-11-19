@@ -14,7 +14,7 @@
 </form>
 
 <h3>Students in {{ class_name }}</h3>
-<table style="margin-bottom: 40px;">
+<table style="margin-bottom: 20px;">
     <tr>
         <th>ID</th><th>Name</th><th>Roll No</th><th>Action</th>
     </tr>
@@ -30,6 +30,19 @@
     </tr>
     {% endfor %}
 </table>
+
+<!-- Pagination for Students -->
+<div style="display: flex; justify-content: center; align-items: center; gap: 15px; margin-bottom: 40px;">
+    {% if page > 1 %}
+        <a href="/students/{{ class_name }}?page={{ page - 1 }}" style="padding: 8px 15px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">⬅️ Previous</a>
+    {% endif %}
+    
+    <span style="font-weight: bold; color: #555;">Page {{ page }} of {{ total_pages if total_pages > 0 else 1 }}</span>
+    
+    {% if page < total_pages %}
+        <a href="/students/{{ class_name }}?page={{ page + 1 }}" style="padding: 8px 15px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">Next ➡️</a>
+    {% endif %}
+</div>
 
 <!-- Borrowing History for this Class -->
 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
