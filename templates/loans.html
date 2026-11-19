@@ -1,120 +1,187 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<h2>🔄 Issue / Return Books</h2>
+<!-- Include Select2 for searchable dropdowns -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-<div class="add-form">
-    <form method="POST" action="/issue_book" style="display:flex; gap:10px; width:100%; flex-wrap:wrap;">
-        <select name="book_id" required style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1;">
-            <option value="">-- Select Book --</option>
-            {% for b in books %}
-                <option value="{{ b.id }}">{{ b.title }} {% if b.book_code %}({{ b.book_code }}){% endif %}</option>
-            {% endfor %}
-        </select>
+<h2>🔄 Circulation Desk</h2>
 
-        <select name="borrower_type" id="borrower_type" required style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1;" onchange="toggleBorrower()">
-            <option value="student">Student</option>
-            <option value="teacher">Teacher</option>
-        </select>
-        
-        <select name="student_id" id="student_select" style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1;">
-            <option value="">-- Select Student --</option>
-            {% for s in students %}
-                <option value="{{ s.id }}">{{ s.name }} (Class: {{ s.class_name }})</option>
-            {% endfor %}
-        </select>
-
-        <select name="teacher_id" id="teacher_select" style="padding:10px; border-radius:5px; border:1px solid #ccc; flex:1; display:none;">
-            <option value="">-- Select Teacher --</option>
-            {% for t in teachers %}
-                <option value="{{ t.id }}">{{ t.name }} (Dept: {{ t.department }})</option>
-            {% endfor %}
-        </select>
-
-        <button type="submit" style="background:#3498db;">Issue Book</button>
-    </form>
+<!-- Tab Buttons -->
+<div style="display: flex; gap: 10px; margin-bottom: 20px;">
+    <button class="tab-btn active" onclick="openTab('issue-tab')" style="padding: 10px 20px; font-size: 16px; font-weight: bold; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">📤 Issue Book</button>
+    <button class="tab-btn" onclick="openTab('return-tab')" style="padding: 10px 20px; font-size: 16px; font-weight: bold; background: #bdc3c7; color: #333; border: none; border-radius: 5px; cursor: pointer;">📥 Return Book</button>
 </div>
 
-<table>
-    <tr>
-        <th>ID</th>
-        <th>Book Title</th>
-        <th>Book Code</th>
-        <th>Borrower Name</th>
-        <th>Details</th>
-        <th>Issue Date</th>
-        <th>Due Date</th>
-        <th>Return Date</th>
-        <th>Status</th>
-        <th>Fine (RWF)</th>
-        <th>Action</th>
-    </tr>
-    {% for loan in loans %}
-    <tr>
-        <td>{{ loan.id }}</td>
-        <td>{{ loan.title }}</td>
-        <td style="font-weight:bold; color:#8e44ad;">{{ loan.book_code or '-' }}</td>
-        <td>
-            {% if loan.student_name %} {{ loan.student_name }} {% endif %}
-            {% if loan.teacher_name %} {{ loan.teacher_name }} {% endif %}
-        </td>
-        <td>
-            {% if loan.student_name %} <span style="background:#e8f4f8; padding:3px 8px; border-radius:4px; font-size:12px;">Student: {{ loan.class_name }}</span> {% endif %}
-            {% if loan.teacher_name %} <span style="background:#f9f0ff; padding:3px 8px; border-radius:4px; font-size:12px;">Teacher</span> {% endif %}
-        </td>
-        <td>{{ loan.issue_date }}</td>
-        <td>{{ loan.due_date }}</td>
-        <td style="font-weight:bold; color: #27ae60;">
-            {% if loan.return_date %}{{ loan.return_date }}{% else %}-{% endif %}
-        </td>
-        <td>
-            {% if loan.status == 'issued' %}
-                <span style="color:orange; font-weight:bold;">Issued</span>
-            {% else %}
-                <span style="color:#27ae60; font-weight:bold;">Returned</span>
-            {% endif %}
-        </td>
-        
-        <!-- NEW: Fine Column -->
-        <td style="font-weight:bold; color: #e74c3c;">
-            {% if loan.fine > 0 %}
-                {{ loan.fine }} RWF
-                <br><span style="font-size:10px; color:gray;">({{ loan.days_late }} days late)</span>
-            {% else %}
-                -
-            {% endif %}
-        </td>
+<!-- Issue Tab -->
+<div id="issue-tab" class="tab-content" style="display: block;">
+    <div class="add-form" style="display: flex; flex-direction: column; max-width: 600px; gap: 15px;">
+        <form method="POST" action="/issue_book" style="display: flex; flex-direction: column; gap: 15px;">
+            <div>
+                <label><strong>Select Book:</strong></label>
+                <select name="book_id" class="searchable-dropdown" required style="width: 100%; padding: 10px;">
+                    <option value="">-- Search for a Book --</option>
+                    {% for b in books %}
+                        <option value="{{ b.id }}">{{ b.title }} {% if b.book_code %}({{ b.book_code }}){% endif %}</option>
+                    {% endfor %}
+                </select>
+            </div>
 
-        <td>
-            {% if loan.status == 'issued' %}
-                <a href="/return_book/{{ loan.id }}" style="color:#e74c3c; text-decoration:none; font-weight:bold;">Return</a>
-            {% else %}
-                <span style="color:gray;">Done</span>
-            {% endif %}
-        </td>
-    </tr>
-    {% endfor %}
-</table>
+            <div>
+                <label><strong>Borrower Type:</strong></label>
+                <select name="borrower_type" id="borrower_type" required style="width: 100%; padding: 10px;" onchange="toggleBorrower()">
+                    <option value="student">Student</option>
+                    <option value="teacher">Teacher</option>
+                </select>
+            </div>
+            
+            <div id="student_div">
+                <label><strong>Select Student:</strong></label>
+                <select name="student_id" id="student_select" class="searchable-dropdown" style="width: 100%; padding: 10px;">
+                    <option value="">-- Search for a Student --</option>
+                    {% for s in students %}
+                        <option value="{{ s.id }}">{{ s.name }} (Class: {{ s.class_name }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div id="teacher_div" style="display: none;">
+                <label><strong>Select Teacher:</strong></label>
+                <select name="teacher_id" id="teacher_select" class="searchable-dropdown" style="width: 100%; padding: 10px;">
+                    <option value="">-- Search for a Teacher --</option>
+                    {% for t in teachers %}
+                        <option value="{{ t.id }}">{{ t.name }} (Dept: {{ t.department }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <button type="submit" style="background: #27ae60; padding: 12px; font-size: 16px; font-weight: bold;">Confirm Issue</button>
+        </form>
+    </div>
+</div>
+
+<!-- Return Tab -->
+<div id="return-tab" class="tab-content" style="display: none;">
+    <h3>Active Loans (Currently Borrowed)</h3>
+    <table>
+        <tr>
+            <th>Book Title</th>
+            <th>Book Code</th>
+            <th>Borrower</th>
+            <th>Issue Date</th>
+            <th>Due Date</th>
+            <th>Fine (RWF)</th>
+            <th>Action</th>
+        </tr>
+        {% for loan in active_loans %}
+        <tr>
+            <td>{{ loan.title }}</td>
+            <td style="font-weight:bold; color:#8e44ad;">{{ loan.book_code or '-' }}</td>
+            <td>
+                {% if loan.student_name %} {{ loan.student_name }} <br><span style="font-size:11px; color:#777;">(Class: {{ loan.class_name }})</span>{% endif %}
+                {% if loan.teacher_name %} {{ loan.teacher_name }} <br><span style="font-size:11px; color:#777;">(Teacher)</span>{% endif %}
+            </td>
+            <td>{{ loan.issue_date }}</td>
+            <td style="font-weight:bold; color: {% if loan.fine > 0 %}#e74c3c{% else %}#333{% endif %};">{{ loan.due_date }}</td>
+            <td style="font-weight:bold; color: #e74c3c;">
+                {% if loan.fine > 0 %}
+                    {{ loan.fine }} RWF <br><span style="font-size:10px;">({{ loan.days_late }} days late)</span>
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+            <td>
+                <a href="/return_book/{{ loan.id }}" style="background:#e74c3c; color:white; padding:6px 12px; border-radius:4px; text-decoration:none; font-weight:bold; font-size:13px;">Return</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center; padding: 20px;">🎉 No active loans. All books are in the library.</td></tr>
+        {% endfor %}
+    </table>
+    
+    <h3 style="margin-top: 40px; color: gray;">Returned History</h3>
+    <table style="opacity: 0.8;">
+        <tr>
+            <th>Book Title</th>
+            <th>Borrower</th>
+            <th>Issue Date</th>
+            <th>Return Date</th>
+            <th>Fine Paid</th>
+        </tr>
+        {% for loan in history_loans %}
+        <tr>
+            <td>{{ loan.title }}</td>
+            <td>
+                {% if loan.student_name %} {{ loan.student_name }} {% endif %}
+                {% if loan.teacher_name %} {{ loan.teacher_name }} {% endif %}
+            </td>
+            <td>{{ loan.issue_date }}</td>
+            <td style="color:#27ae60; font-weight:bold;">{{ loan.return_date }}</td>
+            <td style="color: #e74c3c;">{% if loan.fine > 0 %}{{ loan.fine }} RWF{% else %}-{% endif %}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+
+<style>
+    /* Styling for the Tabs */
+    .tab-content { animation: fadeIn 0.3s; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    
+    /* Select2 Custom styling to match your app */
+    .select2-container .select2-selection--single {
+        height: 40px; padding: 5px; border: 1px solid #ccc; border-radius: 5px;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 38px;
+    }
+</style>
 
 <script>
+    // Tab switching logic
+    function openTab(tabName) {
+        var i, tabcontent, tablinks;
+        tabcontent = document.getElementsByClassName("tab-content");
+        for (i = 0; i < tabcontent.length; i++) {
+            tabcontent[i].style.display = "none";
+        }
+        tablinks = document.getElementsByClassName("tab-btn");
+        for (i = 0; i < tablinks.length; i++) {
+            tablinks[i].style.background = "#bdc3c7";
+            tablinks[i].style.color = "#333";
+        }
+        document.getElementById(tabName).style.display = "block";
+        event.currentTarget.style.background = "#3498db";
+        event.currentTarget.style.color = "white";
+    }
+
+    // Searchable dropdowns logic (Requires jQuery & Select2)
+    $(document).ready(function() {
+        $('.searchable-dropdown').select2({
+            placeholder: "-- Search here --",
+            allowClear: true
+        });
+    });
+
+    // Toggle between Student and Teacher in the Issue tab
     function toggleBorrower() {
         var type = document.getElementById("borrower_type").value;
-        var studentSelect = document.getElementById("student_select");
-        var teacherSelect = document.getElementById("teacher_select");
-
+        var studentDiv = document.getElementById("student_div");
+        var teacherDiv = document.getElementById("teacher_div");
+        
         if (type === "student") {
-            studentSelect.style.display = "block";
-            studentSelect.required = true;
-            teacherSelect.style.display = "none";
-            teacherSelect.required = false;
-            teacherSelect.value = "";
+            studentDiv.style.display = "block";
+            teacherDiv.style.display = "none";
+            $('#student_select').prop('required', true);
+            $('#teacher_select').prop('required', false).val(null).trigger('change');
         } else {
-            studentSelect.style.display = "none";
-            studentSelect.required = false;
-            studentSelect.value = "";
-            teacherSelect.style.display = "block";
-            teacherSelect.required = true;
+            studentDiv.style.display = "none";
+            teacherDiv.style.display = "block";
+            $('#student_select').prop('required', false).val(null).trigger('change');
+            $('#teacher_select').prop('required', true);
         }
     }
 </script>
+
 {% endblock %}
