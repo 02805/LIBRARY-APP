@@ -318,16 +318,10 @@ def students():
     sid = session['school_id']
     conn = get_db()
     c = conn.cursor()
-    
-    # Get unique classes and count students in each
-    if sid == 0:
-        c.execute("SELECT class_name, COUNT(*) as count FROM students GROUP BY class_name ORDER BY class_name")
-    else:
-        c.execute("SELECT class_name, COUNT(*) as count FROM students WHERE school_id=%s GROUP BY class_name ORDER BY class_name", (sid,))
-    
+    if sid == 0: c.execute("SELECT class_name, COUNT(*) as count FROM students GROUP BY class_name ORDER BY class_name")
+    else: c.execute("SELECT class_name, COUNT(*) as count FROM students WHERE school_id=%s GROUP BY class_name ORDER BY class_name", (sid,))
     classes = c.fetchall()
     conn.close()
-    
     return render_template('students.html', classes=classes)
 
 # ---------- SPECIFIC CLASS PAGE ----------
@@ -337,27 +331,18 @@ def class_students(class_name):
     sid = session['school_id']
     conn = get_db()
     c = conn.cursor()
-    
-    # 1. Get all students in this class
-    if sid == 0:
-        c.execute("SELECT * FROM students WHERE class_name=%s ORDER BY name", (class_name,))
-    else:
-        c.execute("SELECT * FROM students WHERE school_id=%s AND class_name=%s ORDER BY name", (sid, class_name))
+    if sid == 0: c.execute("SELECT * FROM students WHERE class_name=%s ORDER BY name", (class_name,))
+    else: c.execute("SELECT * FROM students WHERE school_id=%s AND class_name=%s ORDER BY name", (sid, class_name))
     students_list = c.fetchall()
     
-    # 2. Get all books issued to THIS class
     if sid == 0:
-        c.execute('''
-            SELECT loans.id, loans.issue_date, loans.due_date, loans.status, books.title, books.book_code, students.name as student_name
+        c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.status, books.title, books.book_code, students.name as student_name
             FROM loans JOIN books ON loans.book_id = books.id JOIN students ON loans.student_id = students.id
-            WHERE students.class_name=%s ORDER BY loans.id DESC
-        ''', (class_name,))
+            WHERE students.class_name=%s ORDER BY loans.id DESC''', (class_name,))
     else:
-        c.execute('''
-            SELECT loans.id, loans.issue_date, loans.due_date, loans.status, books.title, books.book_code, students.name as student_name
+        c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.status, books.title, books.book_code, students.name as student_name
             FROM loans JOIN books ON loans.book_id = books.id JOIN students ON loans.student_id = students.id
-            WHERE loans.school_id=%s AND students.class_name=%s ORDER BY loans.id DESC
-        ''', (sid, class_name))
+            WHERE loans.school_id=%s AND students.class_name=%s ORDER BY loans.id DESC''', (sid, class_name))
     class_loans = c.fetchall()
     
     conn.close()
@@ -420,7 +405,6 @@ def delete_all_students():
     conn.close()
     return redirect(url_for('students'))
 
-# ---------- CLASS BORROWING HISTORY EXPORT ----------
 @app.route('/export_class_history/<class_name>')
 def export_class_history(class_name):
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -437,7 +421,6 @@ def export_class_history(class_name):
                      WHERE loans.school_id=%s AND students.class_name=%s ORDER BY loans.id DESC''', (sid, class_name))
     history = c.fetchall()
     conn.close()
-    
     si = StringIO()
     cw = csv.writer(si)
     cw.writerow(['Student Name', 'Roll No', 'Book Title', 'Book Code', 'Issue Date', 'Due Date', 'Status'])
@@ -486,34 +469,43 @@ def delete_teacher(id):
     conn.close()
     return redirect(url_for('teachers'))
 
-# ---------- LOANS ----------
+# ---------- LOANS (UPDATED: Separate Active & History) ----------
 @app.route('/loans')
 def loans():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     conn = get_db()
     c = conn.cursor()
+    
+    # Fetch dropdown data (Books & Students & Teachers)
     if sid == 0:
         c.execute("SELECT id, title, book_code FROM books WHERE quantity > 0")
         all_books = c.fetchall()
-        c.execute("SELECT * FROM students")
+        c.execute("SELECT * FROM students ORDER BY name")
         all_students = c.fetchall()
-        c.execute("SELECT * FROM teachers")
+        c.execute("SELECT * FROM teachers ORDER BY name")
         all_teachers = c.fetchall()
-        c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.return_date, loans.status, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department
-            FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id ORDER BY loans.id DESC''')
     else:
         c.execute("SELECT id, title, book_code FROM books WHERE school_id=%s AND quantity > 0", (sid,))
         all_books = c.fetchall()
-        c.execute("SELECT * FROM students WHERE school_id=%s", (sid,))
+        c.execute("SELECT * FROM students WHERE school_id=%s ORDER BY name", (sid,))
         all_students = c.fetchall()
-        c.execute("SELECT * FROM teachers WHERE school_id=%s", (sid,))
+        c.execute("SELECT * FROM teachers WHERE school_id=%s ORDER BY name", (sid,))
         all_teachers = c.fetchall()
+
+    # Fetch loans
+    if sid == 0:
+        c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.return_date, loans.status, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department
+            FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id ORDER BY loans.id DESC''')
+    else:
         c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.return_date, loans.status, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department
             FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id = %s ORDER BY loans.id DESC''', (sid,))
     all_loans = c.fetchall()
-    processed_loans = []
+    
+    processed_active = []
+    processed_history = []
     today = date.today()
+    
     for loan in all_loans:
         loan_dict = dict(loan)
         fine = 0
@@ -523,6 +515,9 @@ def loans():
             if today > due_date:
                 days_late = (today - due_date).days
                 fine = days_late * 100
+            loan_dict['fine'] = fine
+            loan_dict['days_late'] = days_late
+            processed_active.append(loan_dict)
         else:
             if loan_dict['return_date']:
                 due_date = date.fromisoformat(loan_dict['due_date'])
@@ -530,11 +525,12 @@ def loans():
                 if return_date > due_date:
                     days_late = (return_date - due_date).days
                     fine = days_late * 100
-        loan_dict['fine'] = fine
-        loan_dict['days_late'] = days_late
-        processed_loans.append(loan_dict)
+            loan_dict['fine'] = fine
+            loan_dict['days_late'] = days_late
+            processed_history.append(loan_dict)
+            
     conn.close()
-    return render_template('loans.html', books=all_books, students=all_students, teachers=all_teachers, loans=processed_loans)
+    return render_template('loans.html', books=all_books, students=all_students, teachers=all_teachers, active_loans=processed_active, history_loans=processed_history)
 
 @app.route('/issue_book', methods=['POST'])
 def issue_book():
