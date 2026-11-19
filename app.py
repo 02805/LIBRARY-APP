@@ -220,23 +220,48 @@ def dashboard():
     conn.close()
     return render_template('dashboard.html', books=book_count, students=student_count, teachers=teacher_count, loans=loan_count, overdue=overdue_count)
 
-# ---------- BOOKS ----------
+# ---------- BOOKS (Paginated) ----------
 @app.route('/books')
 def books():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
     search_query = request.args.get('search', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = 15
+    offset = (page - 1) * per_page
+
     conn = get_db()
     c = conn.cursor()
+    
+    # Count total for pagination
     if sid == 0:
-        if search_query: c.execute("SELECT * FROM books WHERE title ILIKE %s OR author ILIKE %s", ('%' + search_query + '%', '%' + search_query + '%'))
-        else: c.execute("SELECT * FROM books")
+        if search_query:
+            c.execute("SELECT COUNT(*) FROM books WHERE title ILIKE %s OR author ILIKE %s", ('%' + search_query + '%', '%' + search_query + '%'))
+        else:
+            c.execute("SELECT COUNT(*) FROM books")
     else:
-        if search_query: c.execute("SELECT * FROM books WHERE school_id=%s AND (title ILIKE %s OR author ILIKE %s)", (sid, '%' + search_query + '%', '%' + search_query + '%'))
-        else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
+        if search_query:
+            c.execute("SELECT COUNT(*) FROM books WHERE school_id=%s AND (title ILIKE %s OR author ILIKE %s)", (sid, '%' + search_query + '%', '%' + search_query + '%'))
+        else:
+            c.execute("SELECT COUNT(*) FROM books WHERE school_id=%s", (sid,))
+    total_books = c.fetchone()[0]
+    total_pages = (total_books + per_page - 1) // per_page
+
+    # Fetch only the 15 items for this page
+    if sid == 0:
+        if search_query:
+            c.execute("SELECT * FROM books WHERE title ILIKE %s OR author ILIKE %s ORDER BY id DESC LIMIT %s OFFSET %s", ('%' + search_query + '%', '%' + search_query + '%', per_page, offset))
+        else:
+            c.execute("SELECT * FROM books ORDER BY id DESC LIMIT %s OFFSET %s", (per_page, offset))
+    else:
+        if search_query:
+            c.execute("SELECT * FROM books WHERE school_id=%s AND (title ILIKE %s OR author ILIKE %s) ORDER BY id DESC LIMIT %s OFFSET %s", (sid, '%' + search_query + '%', '%' + search_query + '%', per_page, offset))
+        else:
+            c.execute("SELECT * FROM books WHERE school_id=%s ORDER BY id DESC LIMIT %s OFFSET %s", (sid, per_page, offset))
     all_books = c.fetchall()
+    
     conn.close()
-    return render_template('books.html', books=all_books, search_query=search_query)
+    return render_template('books.html', books=all_books, search_query=search_query, page=page, total_pages=total_pages)
 
 @app.route('/add_book', methods=['POST'])
 def add_book():
@@ -324,17 +349,34 @@ def students():
     conn.close()
     return render_template('students.html', classes=classes)
 
-# ---------- SPECIFIC CLASS PAGE ----------
+# ---------- SPECIFIC CLASS PAGE (Paginated & Alphabetical) ----------
 @app.route('/students/<class_name>')
 def class_students(class_name):
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
+    page = request.args.get('page', 1, type=int)
+    per_page = 15
+    offset = (page - 1) * per_page
+
     conn = get_db()
     c = conn.cursor()
-    if sid == 0: c.execute("SELECT * FROM students WHERE class_name=%s ORDER BY name", (class_name,))
-    else: c.execute("SELECT * FROM students WHERE school_id=%s AND class_name=%s ORDER BY name", (sid, class_name))
+    
+    # 1. Count total students in this class
+    if sid == 0: 
+        c.execute("SELECT COUNT(*) FROM students WHERE class_name=%s", (class_name,))
+    else: 
+        c.execute("SELECT COUNT(*) FROM students WHERE school_id=%s AND class_name=%s", (sid, class_name))
+    total_students = c.fetchone()[0]
+    total_pages = (total_students + per_page - 1) // per_page
+
+    # 2. Get students for current page (ORDER BY name for alphabetical)
+    if sid == 0: 
+        c.execute("SELECT * FROM students WHERE class_name=%s ORDER BY name LIMIT %s OFFSET %s", (class_name, per_page, offset))
+    else: 
+        c.execute("SELECT * FROM students WHERE school_id=%s AND class_name=%s ORDER BY name LIMIT %s OFFSET %s", (sid, class_name, per_page, offset))
     students_list = c.fetchall()
     
+    # 3. Get borrowing history for this class
     if sid == 0:
         c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.status, books.title, books.book_code, students.name as student_name
             FROM loans JOIN books ON loans.book_id = books.id JOIN students ON loans.student_id = students.id
@@ -346,7 +388,7 @@ def class_students(class_name):
     class_loans = c.fetchall()
     
     conn.close()
-    return render_template('class_students.html', class_name=class_name, students=students_list, class_loans=class_loans)
+    return render_template('class_students.html', class_name=class_name, students=students_list, class_loans=class_loans, page=page, total_pages=total_pages)
 
 @app.route('/add_student/<class_name>', methods=['POST'])
 def add_student_class(class_name):
@@ -469,7 +511,7 @@ def delete_teacher(id):
     conn.close()
     return redirect(url_for('teachers'))
 
-# ---------- LOANS (UPDATED: Separate Active & History) ----------
+# ---------- LOANS (Circulation Desk) ----------
 @app.route('/loans')
 def loans():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -477,7 +519,6 @@ def loans():
     conn = get_db()
     c = conn.cursor()
     
-    # Fetch dropdown data (Books & Students & Teachers)
     if sid == 0:
         c.execute("SELECT id, title, book_code FROM books WHERE quantity > 0")
         all_books = c.fetchall()
@@ -493,7 +534,6 @@ def loans():
         c.execute("SELECT * FROM teachers WHERE school_id=%s ORDER BY name", (sid,))
         all_teachers = c.fetchall()
 
-    # Fetch loans
     if sid == 0:
         c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.return_date, loans.status, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department
             FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id ORDER BY loans.id DESC''')
