@@ -5,6 +5,7 @@ import csv
 from io import StringIO
 from datetime import date, timedelta
 import os
+import re # Used to read the titles
 
 app = Flask(__name__)
 app.secret_key = 'school_library_secret_key'
@@ -24,73 +25,14 @@ def get_db():
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS librarians (
-        id SERIAL PRIMARY KEY,
-        librarian_name TEXT,
-        school_name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        status TEXT DEFAULT 'pending'
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS books (
-        id SERIAL PRIMARY KEY,
-        school_id INTEGER,
-        title TEXT NOT NULL,
-        author TEXT NOT NULL,
-        isbn TEXT,
-        quantity INTEGER DEFAULT 1,
-        book_code TEXT,
-        condition TEXT,
-        category TEXT,
-        book_type TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS students (
-        id SERIAL PRIMARY KEY,
-        school_id INTEGER,
-        name TEXT NOT NULL,
-        class_name TEXT,
-        roll_no TEXT UNIQUE
-    )''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS teachers (
-        id SERIAL PRIMARY KEY,
-        school_id INTEGER,
-        name TEXT NOT NULL,
-        department TEXT
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS loans (
-        id SERIAL PRIMARY KEY,
-        school_id INTEGER,
-        book_id INTEGER,
-        student_id INTEGER,
-        teacher_id INTEGER,
-        issue_date TEXT,
-        due_date TEXT,
-        return_date TEXT,
-        status TEXT DEFAULT 'issued'
-    )''')
-
-    c.execute('''CREATE TABLE IF NOT EXISTS reservations (
-        id SERIAL PRIMARY KEY,
-        school_id INTEGER,
-        book_id INTEGER,
-        student_id INTEGER,
-        reserve_date TEXT,
-        status TEXT DEFAULT 'pending'
-    )''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS admins (
-        id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE,
-        password TEXT
-    )''')
-    
+    c.execute('''CREATE TABLE IF NOT EXISTS librarians (id SERIAL PRIMARY KEY, librarian_name TEXT, school_name TEXT NOT NULL, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, status TEXT DEFAULT 'pending')''')
+    c.execute('''CREATE TABLE IF NOT EXISTS books (id SERIAL PRIMARY KEY, school_id INTEGER, title TEXT NOT NULL, author TEXT NOT NULL, isbn TEXT, quantity INTEGER DEFAULT 1, book_code TEXT, condition TEXT, category TEXT, book_type TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS students (id SERIAL PRIMARY KEY, school_id INTEGER, name TEXT NOT NULL, class_name TEXT, roll_no TEXT UNIQUE)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS teachers (id SERIAL PRIMARY KEY, school_id INTEGER, name TEXT NOT NULL, department TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS loans (id SERIAL PRIMARY KEY, school_id INTEGER, book_id INTEGER, student_id INTEGER, teacher_id INTEGER, issue_date TEXT, due_date TEXT, return_date TEXT, status TEXT DEFAULT 'issued')''')
+    c.execute('''CREATE TABLE IF NOT EXISTS reservations (id SERIAL PRIMARY KEY, school_id INTEGER, book_id INTEGER, student_id INTEGER, reserve_date TEXT, status TEXT DEFAULT 'pending')''')
+    c.execute('''CREATE TABLE IF NOT EXISTS admins (id SERIAL PRIMARY KEY, username TEXT UNIQUE, password TEXT)''')
     c.execute("INSERT INTO admins (username, password) VALUES ('admin', 'admin123') ON CONFLICT (username) DO NOTHING")
-    
     conn.commit()
     conn.close()
 
@@ -231,10 +173,8 @@ def books():
     page = request.args.get('page', 1, type=int)
     per_page = 15
     offset = (page - 1) * per_page
-
     conn = get_db()
     c = conn.cursor()
-    
     if sid == 0:
         if search_query: c.execute("SELECT COUNT(*) FROM books WHERE title ILIKE %s OR author ILIKE %s", ('%' + search_query + '%', '%' + search_query + '%'))
         else: c.execute("SELECT COUNT(*) FROM books")
@@ -243,7 +183,6 @@ def books():
         else: c.execute("SELECT COUNT(*) FROM books WHERE school_id=%s", (sid,))
     total_books = c.fetchone()[0]
     total_pages = (total_books + per_page - 1) // per_page
-
     if sid == 0:
         if search_query: c.execute("SELECT * FROM books WHERE title ILIKE %s OR author ILIKE %s ORDER BY id DESC LIMIT %s OFFSET %s", ('%' + search_query + '%', '%' + search_query + '%', per_page, offset))
         else: c.execute("SELECT * FROM books ORDER BY id DESC LIMIT %s OFFSET %s", (per_page, offset))
@@ -327,7 +266,7 @@ def export_books():
         cw.writerow([index, book['title'], book['book_code'] or '', book['author'], book['condition'] or 'Good'])
     return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=library_books.csv"})
 
-# ---------- INVENTORY REPORT ----------
+# ---------- INVENTORY REPORT (SMART TITLE PARSING) ----------
 @app.route('/inventory')
 def inventory():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -336,32 +275,66 @@ def inventory():
     c = conn.cursor()
     
     if sid == 0:
-        c.execute("SELECT category, book_type, quantity FROM books WHERE category IS NOT NULL AND category != ''")
+        c.execute("SELECT * FROM books")
     else:
-        c.execute("SELECT category, book_type, quantity FROM books WHERE school_id=%s AND category IS NOT NULL AND category != ''", (sid,))
+        c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
     books = c.fetchall()
     conn.close()
     
+    classes = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']
     grid_data = {}
-    total_sb = 0
-    total_tg = 0
     
     for b in books:
-        cat = b['category'].strip().title()
-        btype = b['book_type'].strip().upper() if b['book_type'] else 'SB'
+        title_upper = b['title'].upper()
+        
+        # 1. Extract Category (Subject) - takes the first 2-3 words usually
+        # We will try to grab the subject before the word 'FOR'
+        category = "OTHER"
+        if " FOR " in title_upper:
+            category = title_upper.split(" FOR ")[0].strip().title()
+        elif " AND " in title_upper:
+            category = title_upper.split(" AND ")[0].strip().title()
+        else:
+            category = title_upper.split()[0].title() # Fallback to first word
+            
+        # 2. Extract Class (S1-S6)
+        matched_class = None
+        for i in range(1, 7):
+            # Look for "S1", "SENIOR 1", "SENIOR ONE"
+            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper:
+                matched_class = f"S{i}"
+                break
+                
+        if not matched_class:
+            matched_class = "Other"
+            
+        # 3. Extract Type (SB or TG)
+        btype = 'SB' # Default to Student Book
+        if "TEACHER" in title_upper or "TG" in title_upper:
+            btype = 'TG'
+            
         qty = b['quantity']
         
-        if cat not in grid_data:
-            grid_data[cat] = {'SB': 0, 'TG': 0}
+        if category not in grid_data:
+            grid_data[category] = {}
+        if matched_class not in grid_data[category]:
+            grid_data[category][matched_class] = {'SB': 0, 'TG': 0}
             
-        if 'TG' in btype:
-            grid_data[cat]['TG'] += qty
-            total_tg += qty
-        else:
-            grid_data[cat]['SB'] += qty
-            total_sb += qty
+        grid_data[category][matched_class][btype] += qty
 
-    return render_template('inventory.html', grid_data=grid_data, total_sb=total_sb, total_tg=total_tg)
+    # Calculate totals for the bottom row
+    column_totals = {}
+    for cls in classes + ['Other']:
+        column_totals[cls] = {'SB': 0, 'TG': 0}
+    
+    grand_total = 0
+    for cat, cls_data in grid_data.items():
+        for cls, type_data in cls_data.items():
+            column_totals[cls]['SB'] += type_data['SB']
+            column_totals[cls]['TG'] += type_data['TG']
+            grand_total += type_data['SB'] + type_data['TG']
+
+    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, grand_total=grand_total, classes=classes)
 
 @app.route('/export_inventory')
 def export_inventory():
@@ -369,41 +342,65 @@ def export_inventory():
     sid = session['school_id']
     conn = get_db()
     c = conn.cursor()
-    if sid == 0:
-        c.execute("SELECT category, book_type, quantity FROM books WHERE category IS NOT NULL AND category != ''")
-    else:
-        c.execute("SELECT category, book_type, quantity FROM books WHERE school_id=%s AND category IS NOT NULL AND category != ''", (sid,))
+    if sid == 0: c.execute("SELECT * FROM books")
+    else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
     books = c.fetchall()
     conn.close()
     
+    classes = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']
     grid_data = {}
-    total_sb = 0
-    total_tg = 0
+    
     for b in books:
-        cat = b['category'].strip().title()
-        btype = b['book_type'].strip().upper() if b['book_type'] else 'SB'
+        title_upper = b['title'].upper()
+        category = "OTHER"
+        if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
+        elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
+        else: category = title_upper.split()[0].title()
+            
+        matched_class = "Other"
+        for i in range(1, 7):
+            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper:
+                matched_class = f"S{i}"
+                break
+                
+        btype = 'TG' if "TEACHER" in title_upper or "TG" in title_upper else 'SB'
         qty = b['quantity']
-        if cat not in grid_data:
-            grid_data[cat] = {'SB': 0, 'TG': 0}
-        if 'TG' in btype:
-            grid_data[cat]['TG'] += qty
-            total_tg += qty
-        else:
-            grid_data[cat]['SB'] += qty
-            total_sb += qty
+        
+        if category not in grid_data: grid_data[category] = {}
+        if matched_class not in grid_data[category]: grid_data[category][matched_class] = {'SB': 0, 'TG': 0}
+        grid_data[category][matched_class][btype] += qty
 
     si = StringIO()
     cw = csv.writer(si)
-    cw.writerow(['Subject / Category', 'Student Books (SB)', 'Teacher Guides (TG)', 'Total Copies'])
     
-    for cat, counts in sorted(grid_data.items()):
-        cw.writerow([cat, counts['SB'], counts['TG'], counts['SB'] + counts['TG']])
+    # Create header rows
+    header1 = ['NO', 'SUBJECT']
+    for cls in classes: header1.extend([cls, ''])
+    header1.extend(['Other', '', 'TOTAL'])
+    header2 = ['', '']
+    for cls in classes: header2.extend(['SB', 'TG'])
+    header2.extend(['SB', 'TG', ''])
+    cw.writerow(header1)
+    cw.writerow(header2)
     
-    cw.writerow(['GRAND TOTAL', total_sb, total_tg, total_sb + total_tg])
+    row_num = 1
+    for cat, cls_data in sorted(grid_data.items()):
+        row = [row_num, cat]
+        cat_total = 0
+        for cls in classes:
+            sb = cls_data.get(cls, {}).get('SB', 0)
+            tg = cls_data.get(cls, {}).get('TG', 0)
+            row.extend([sb, tg])
+            cat_total += sb + tg
+        o_sb = cls_data.get('Other', {}).get('SB', 0)
+        o_tg = cls_data.get('Other', {}).get('TG', 0)
+        row.extend([o_sb, o_tg, cat_total])
+        cw.writerow(row)
+        row_num += 1
         
-    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=inventory_report.csv"})
+    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=inventory_matrix.csv"})
 
-# ---------- STUDENTS (Class List) ----------
+# ---------- STUDENTS ----------
 @app.route('/students')
 def students():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -416,7 +413,6 @@ def students():
     conn.close()
     return render_template('students.html', classes=classes)
 
-# ---------- SPECIFIC CLASS PAGE ----------
 @app.route('/students/<class_name>')
 def class_students(class_name):
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -424,19 +420,15 @@ def class_students(class_name):
     page = request.args.get('page', 1, type=int)
     per_page = 15
     offset = (page - 1) * per_page
-
     conn = get_db()
     c = conn.cursor()
-    
     if sid == 0: c.execute("SELECT COUNT(*) FROM students WHERE class_name=%s", (class_name,))
     else: c.execute("SELECT COUNT(*) FROM students WHERE school_id=%s AND class_name=%s", (sid, class_name))
     total_students = c.fetchone()[0]
     total_pages = (total_students + per_page - 1) // per_page
-
     if sid == 0: c.execute("SELECT * FROM students WHERE class_name=%s ORDER BY name LIMIT %s OFFSET %s", (class_name, per_page, offset))
     else: c.execute("SELECT * FROM students WHERE school_id=%s AND class_name=%s ORDER BY name LIMIT %s OFFSET %s", (sid, class_name, per_page, offset))
     students_list = c.fetchall()
-    
     if sid == 0:
         c.execute('''SELECT loans.id, loans.issue_date, loans.due_date, loans.status, books.title, books.book_code, students.name as student_name
             FROM loans JOIN books ON loans.book_id = books.id JOIN students ON loans.student_id = students.id
@@ -446,7 +438,6 @@ def class_students(class_name):
             FROM loans JOIN books ON loans.book_id = books.id JOIN students ON loans.student_id = students.id
             WHERE loans.school_id=%s AND students.class_name=%s ORDER BY loans.id DESC''', (sid, class_name))
     class_loans = c.fetchall()
-    
     conn.close()
     return render_template('class_students.html', class_name=class_name, students=students_list, class_loans=class_loans, page=page, total_pages=total_pages)
 
@@ -457,11 +448,9 @@ def add_student_class(class_name):
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (%s, %s, %s, %s)",
-                     (sid, request.form['name'], class_name, request.form['roll_no']))
+        c.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (%s, %s, %s, %s)", (sid, request.form['name'], class_name, request.form['roll_no']))
         conn.commit()
-    except psycopg2.IntegrityError:
-        conn.rollback()
+    except psycopg2.IntegrityError: conn.rollback()
     conn.close()
     return redirect(url_for('class_students', class_name=class_name))
 
@@ -471,8 +460,7 @@ def edit_student(id):
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
-        c.execute("UPDATE students SET name=%s, class_name=%s, roll_no=%s WHERE id=%s",
-                     (request.form['name'], request.form['class_name'], request.form['roll_no'], id))
+        c.execute("UPDATE students SET name=%s, class_name=%s, roll_no=%s WHERE id=%s", (request.form['name'], request.form['class_name'], request.form['roll_no'], id))
         conn.commit()
         class_name = request.form['class_name']
         conn.close()
@@ -639,11 +627,9 @@ def issue_book():
     conn = get_db()
     c = conn.cursor()
     if borrower_type == 'student':
-        c.execute("INSERT INTO loans (school_id, book_id, student_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')",
-                     (sid, book_id, request.form.get('student_id'), today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
+        c.execute("INSERT INTO loans (school_id, book_id, student_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')", (sid, book_id, request.form.get('student_id'), today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
     else:
-        c.execute("INSERT INTO loans (school_id, book_id, teacher_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')",
-                     (sid, book_id, request.form.get('teacher_id'), today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
+        c.execute("INSERT INTO loans (school_id, book_id, teacher_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')", (sid, book_id, request.form.get('teacher_id'), today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
     c.execute("UPDATE books SET quantity = quantity - 1 WHERE id = %s", (book_id,))
     conn.commit()
     conn.close()
