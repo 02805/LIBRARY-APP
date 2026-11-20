@@ -717,26 +717,198 @@ def issue_reserved(id):
         due = today + timedelta(days=14)
         c.execute("INSERT INTO loans (school_id, book_id, student_id, issue_date, due_date, status) VALUES (%s, %s, %s, %s, %s, 'issued')",
                      (sid, res['book_id'], res['student_id'], today.strftime("%Y-%m-%d"), due.strftime("%Y-%m-%d")))
-        c.execute("UPDATE books SET quantity = quantity - 1 WHERE id=%s", (res        c.execute("UPDATE books SET quantity = quantity - 1 WHERE id=%s", (res['book_id'],))
-        c.execute("UPDATE reservations SET status='issued' WHERE id=%s", (id,))
+        c.execute("UPDATE books SET quantity = quantity - 1 WHERE id=%s", (res['book_id'],))
+        c.execute("DELETE FROM reservations WHERE id=%s", (id,))
         conn.commit()
     conn.close()
-    return redirect(url_for('reservations'))
-
+    return redirect(url_for('loans'))
 
 @app.route('/cancel_reservation/<int:id>')
 def cancel_reservation(id):
-    if 'school_id' not in session:
-        return redirect(url_for('login'))
+    if 'school_id' not in session: return redirect(url_for('login'))
     conn = get_db()
     c = conn.cursor()
-    c.execute("UPDATE reservations SET status='cancelled' WHERE id=%s", (id,))
+    c.execute("DELETE FROM reservations WHERE id=%s", (id,))
     conn.commit()
     conn.close()
     return redirect(url_for('reservations'))
 
+# ---------- BULK IMPORT ----------
+@app.route('/import_data', methods=['GET', 'POST'])
+def import_data():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id'] if session['school_id'] != 0 else 999
+    if request.method == 'POST':
+        file = request.files['file']
+        import_type = request.form['import_type']
+        if file and file.filename.endswith('.csv'):
+            file_content = file.read().decode('utf-8-sig', errors='ignore')
+            reader = csv.reader(StringIO(file_content))
+            next(reader, None) 
+            conn = get_db()
+            c = conn.cursor()
+            if import_type == 'books':
+                for row in reader:
+                    if len(row) >= 4: 
+                        try: 
+                            title = row[0].strip()
+                            author = row[1].strip()
+                            isbn = row[2].strip()
+                            quantity = row[3].strip()
+                            category = row[4].strip() if len(row) > 4 else None
+                            book_type = row[5].strip() if len(row) > 5 else None
+                            
+                            c.execute("INSERT INTO books (school_id, title, author, isbn, quantity, category, book_type) VALUES (%s, %s, %s, %s, %s, %s)",
+                                      (sid, title, author, isbn, quantity, category, book_type))
+                        except Exception: conn.rollback()
+            elif import_type == 'students':
+                for row in reader:
+                    if len(row) >= 3:
+                        try: c.execute("INSERT INTO students (school_id, name, class_name, roll_no) VALUES (%s, %s, %s, %s)", (sid, row[0].strip(), row[1].strip(), row[2].strip()))
+                        except psycopg2.IntegrityError: conn.rollback()
+            conn.commit()
+            conn.close()
+            return redirect(url_for('import_data', success='true'))
+    return render_template('import.html')
 
-# ---------- APP BOOTSTRAP ----------
+@app.route('/import_generate_codes', methods=['POST'])
+def import_generate_codes():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id'] if session['school_id'] != 0 else 999
+    file = request.files['file']
+    if file and file.filename.endswith('.csv'):
+        file_content = file.read().decode('utf-8-sig', errors='ignore')
+        reader = csv.reader(StringIO(file_content))
+        next(reader, None) 
+        conn = get_db()
+        c = conn.cursor()
+        for row in reader:
+            if len(row) >= 4:
+                title, author, isbn = row[0].strip(), row[1].strip(), row[2].strip()
+                try: quantity = int(row[3].strip())
+                except ValueError: quantity = 0
+                
+                category = row[4].strip() if len(row) > 4 else None
+                book_type = row[5].strip() if len(row) > 5 else None
+                prefix = title[:2].upper() 
+                
+                for i in range(1, quantity + 1):
+                    book_code = f"{prefix} {i:02d}"
+                    c.execute("INSERT INTO books (school_id, title, author, isbn, quantity, book_code, condition, category, book_type) VALUES (%s, %s, %s, %s, 1, %s, 'Good', %s, %s)", 
+                              (sid, title, author, isbn, book_code, category, book_type))
+        conn.commit()
+        conn.close()
+        return redirect(url_for('import_data', success='true'))
+    return redirect(url_for('import_data'))
+
+# ---------- REPORTS ----------
+@app.route('/reports')
+def reports():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    today_str = date.today().strftime("%Y-%m-%d")
+    current_month = date.today().strftime("%Y-%m")
+
+    where_clause = "" if sid == 0 else "WHERE loans.school_id = %s"
+    params = () if sid == 0 else (sid,)
+
+    c.execute(f"SELECT loans.id, loans.due_date, books.title, students.name as student_name, students.class_name, teachers.name as teacher_name FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id {where_clause} {'AND' if sid != 0 else 'WHERE'} loans.status = 'issued' AND loans.due_date < %s", (*params, today_str))
+    overdue_books_raw = c.fetchall()
+
+    overdue_books = []
+    today = date.today()
+    for row in overdue_books_raw:
+        row_dict = dict(row)
+        due_date_obj = date.fromisoformat(row_dict['due_date'])
+        days_late = (today - due_date_obj).days
+        row_dict['days_late'] = days_late
+        row_dict['fine'] = days_late * 100
+        overdue_books.append(row_dict)
+
+    c.execute(f"SELECT COUNT(*) FROM loans {where_clause} {'AND' if sid != 0 else 'WHERE'} issue_date LIKE %s", (*params, f"{current_month}%"))
+    monthly_issued = c.fetchone()[0]
+
+    c.execute(f"SELECT books.title, COUNT(loans.id) as borrow_count FROM loans JOIN books ON loans.book_id = books.id {where_clause} GROUP BY books.title ORDER BY borrow_count DESC LIMIT 1", params)
+    most_borrowed_book = c.fetchone()
+    c.execute(f"SELECT students.class_name, COUNT(loans.id) as borrow_count FROM loans JOIN students ON loans.student_id = students.id {where_clause} GROUP BY students.class_name ORDER BY borrow_count DESC LIMIT 1", params)
+    most_active_class = c.fetchone()
+    c.execute(f"SELECT students.name, students.class_name, COUNT(loans.id) as borrow_count FROM loans JOIN students ON loans.student_id = students.id {where_clause} GROUP BY students.id, students.name, students.class_name ORDER BY borrow_count DESC LIMIT 1", params)
+    top_student = c.fetchone()
+    c.execute(f"SELECT teachers.name, teachers.department, COUNT(loans.id) as borrow_count FROM loans JOIN teachers ON loans.teacher_id = teachers.id {where_clause} GROUP BY teachers.id, teachers.name, teachers.department ORDER BY borrow_count DESC LIMIT 1", params)
+    top_teacher = c.fetchone()
+
+    conn.close()
+    return render_template('reports.html', overdue=overdue_books, monthly_count=monthly_issued, most_borrowed=most_borrowed_book, active_class=most_active_class, top_student=top_student, top_teacher=top_teacher)
+
+@app.route('/export_overdue')
+def export_overdue():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    today_str = date.today().strftime("%Y-%m-%d")
+    c.execute("SELECT books.title, students.name as student_name, students.class_name, loans.due_date, teachers.name as teacher_name FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id=%s AND loans.status = 'issued' AND loans.due_date < %s", (sid, today_str))
+    overdue_books = c.fetchall()
+    conn.close()
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Book Title', 'Borrower Name', 'Class/Dept', 'Due Date', 'Days Overdue', 'Fine (RWF)'])
+    for row in overdue_books:
+        borrower = row['student_name'] if row['student_name'] else row['teacher_name']
+        detail = row['class_name'] if row['class_name'] else 'Teacher'
+        due_date_obj = date.fromisoformat(row['due_date'])
+        days_late = (date.today() - due_date_obj).days
+        fine = days_late * 100
+        cw.writerow([row['title'], borrower, detail, row['due_date'], days_late, fine])
+    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=overdue_books.csv"})
+
+@app.route('/export_monthly')
+def export_monthly():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    current_month = date.today().strftime("%Y-%m")
+    c.execute("SELECT loans.issue_date, books.title, books.book_code, students.name as student_name, students.class_name, teachers.name as teacher_name, teachers.department FROM loans JOIN books ON loans.book_id = books.id LEFT JOIN students ON loans.student_id = students.id LEFT JOIN teachers ON loans.teacher_id = teachers.id WHERE loans.school_id=%s AND loans.issue_date LIKE %s ORDER BY loans.issue_date DESC", (sid, f"{current_month}%"))
+    monthly_loans = c.fetchall()
+    conn.close()
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['Issue Date', 'Book Title', 'Book Code', 'Borrower Name', 'Borrower Details'])
+    for row in monthly_loans:
+        borrower = row['student_name'] if row['student_name'] else row['teacher_name']
+        detail = f"Class {row['class_name']}" if row['class_name'] else f"Teacher ({row['department']})"
+        cw.writerow([row['issue_date'], row['title'], row['book_code'] or '-', borrower, detail])
+    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=monthly_report.csv"})
+
+# ---------- PROFILE ----------
+@app.route('/profile')
+def profile():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    if session['school_id'] == 0: return redirect(url_for('admin_dashboard'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT librarian_name, school_name, email, password FROM librarians WHERE id=%s", (sid,))
+    user = c.fetchone()
+    conn.close()
+    return render_template('profile.html', user=user)
+
+@app.route('/update_password', methods=['POST'])
+def update_password():
+    if 'school_id' not in session or session['school_id'] == 0: return redirect(url_for('login'))
+    new_password = request.form['new_password']
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("UPDATE librarians SET password=%s WHERE id=%s", (new_password, sid))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('profile'))
+
+# ---------- RUN ----------
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True)
