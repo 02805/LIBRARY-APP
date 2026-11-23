@@ -15,7 +15,6 @@
                 {% for cls in classes %}
                 <th colspan="2" style="padding: 10px; border: 1px solid #ddd; background: #3498db;">SENIOR {{ cls[1] }}</th>
                 {% endfor %}
-                <!-- Changed OTHER to TOTAL -->
                 <th colspan="2" style="padding: 10px; border: 1px solid #ddd; background: #27ae60;">TOTAL</th>
             </tr>
             <tr style="background: #34495e; color: white;">
@@ -23,7 +22,6 @@
                 <th style="padding: 8px; border: 1px solid #ddd; font-size: 11px;">SB</th>
                 <th style="padding: 8px; border: 1px solid #ddd; font-size: 11px; background: #e67e22;">TG</th>
                 {% endfor %}
-                <!-- Changed the last two headers to SB and TG -->
                 <th style="padding: 8px; border: 1px solid #ddd; font-size: 11px; background: #2ecc71;">SB</th>
                 <th style="padding: 8px; border: 1px solid #ddd; font-size: 11px; background: #d35400;">TG</th>
             </tr>
@@ -39,8 +37,11 @@
                 {% for cls in classes %}
                     {% set sb = cls_data.get(cls, {}).get('SB', 0) %}
                     {% set tg = cls_data.get(cls, {}).get('TG', 0) %}
+                    
+                    <!-- Add to the running total for this row -->
                     {% set row_total_sb = row_total_sb + sb %}
                     {% set row_total_tg = row_total_tg + tg %}
+                    
                     <td style="padding: 10px; border: 1px solid #ddd; color: #3498db; font-weight: bold;">{{ sb if sb > 0 else '-' }}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; color: #e67e22; font-weight: bold;">{{ tg if tg > 0 else '-' }}</td>
                 {% endfor %}
@@ -58,7 +59,7 @@
                 <td style="padding: 15px; color: #3498db; border: 1px solid #ddd;">{{ column_totals[cls]['SB'] }}</td>
                 <td style="padding: 15px; color: #e67e22; border: 1px solid #ddd;">{{ column_totals[cls]['TG'] }}</td>
                 {% endfor %}
-                <!-- Grand totals for the new TOTAL column -->
+                <!-- This will now show the total of all SB and TG across all subjects -->
                 <td style="padding: 15px; color: #27ae60; border: 1px solid #ddd; background: #d5f5e3;">{{ total_sb }}</td>
                 <td style="padding: 15px; color: #d35400; border: 1px solid #ddd; background: #fae5d3;">{{ total_tg }}</td>
             </tr>
