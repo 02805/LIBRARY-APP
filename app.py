@@ -5,7 +5,7 @@ import csv
 from io import StringIO
 from datetime import date, timedelta
 import os
-import re # Used to read the titles
+import re
 
 app = Flask(__name__)
 app.secret_key = 'school_library_secret_key'
@@ -266,7 +266,7 @@ def export_books():
         cw.writerow([index, book['title'], book['book_code'] or '', book['author'], book['condition'] or 'Good'])
     return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=library_books.csv"})
 
-# ---------- INVENTORY REPORT (SMART TITLE PARSING) ----------
+# ---------- INVENTORY REPORT (SMART GRID) ----------
 @app.route('/inventory')
 def inventory():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -287,32 +287,27 @@ def inventory():
     for b in books:
         title_upper = b['title'].upper()
         
-        # 1. Extract Category (Subject) - takes the first 2-3 words usually
-        # We will try to grab the subject before the word 'FOR'
-        category = "OTHER"
-        if " FOR " in title_upper:
-            category = title_upper.split(" FOR ")[0].strip().title()
-        elif " AND " in title_upper:
-            category = title_upper.split(" AND ")[0].strip().title()
-        else:
-            category = title_upper.split()[0].title() # Fallback to first word
+        # Use Database Category if available, otherwise guess from title
+        category = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
+        if category == "OTHER":
+            if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
+            elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
+            else: category = title_upper.split()[0].title()
+
+        # Use Database Type (SB/TG) if available
+        btype = 'SB'
+        if b['book_type'] and 'TG' in b['book_type'].upper():
+            btype = 'TG'
+        elif "TEACHER" in title_upper or "TG" in title_upper:
+            btype = 'TG'
             
-        # 2. Extract Class (S1-S6)
-        matched_class = None
+        # Find Class (S1-S6)
+        matched_class = "Other"
         for i in range(1, 7):
-            # Look for "S1", "SENIOR 1", "SENIOR ONE"
-            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper:
+            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper or f"SENIOR {['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX'][i]}" in title_upper:
                 matched_class = f"S{i}"
                 break
                 
-        if not matched_class:
-            matched_class = "Other"
-            
-        # 3. Extract Type (SB or TG)
-        btype = 'SB' # Default to Student Book
-        if "TEACHER" in title_upper or "TG" in title_upper:
-            btype = 'TG'
-            
         qty = b['quantity']
         
         if category not in grid_data:
@@ -322,7 +317,7 @@ def inventory():
             
         grid_data[category][matched_class][btype] += qty
 
-    # Calculate totals for the bottom row
+    # Calculate totals
     column_totals = {}
     for cls in classes + ['Other']:
         column_totals[cls] = {'SB': 0, 'TG': 0}
@@ -352,18 +347,21 @@ def export_inventory():
     
     for b in books:
         title_upper = b['title'].upper()
-        category = "OTHER"
-        if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
-        elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
-        else: category = title_upper.split()[0].title()
+        
+        category = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
+        if category == "OTHER":
+            if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
+            elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
+            else: category = title_upper.split()[0].title()
+
+        btype = 'TG' if (b['book_type'] and 'TG' in b['book_type'].upper()) or "TEACHER" in title_upper or "TG" in title_upper else 'SB'
             
         matched_class = "Other"
         for i in range(1, 7):
-            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper:
+            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper or f"SENIOR {['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX'][i]}" in title_upper:
                 matched_class = f"S{i}"
                 break
                 
-        btype = 'TG' if "TEACHER" in title_upper or "TG" in title_upper else 'SB'
         qty = b['quantity']
         
         if category not in grid_data: grid_data[category] = {}
@@ -373,7 +371,6 @@ def export_inventory():
     si = StringIO()
     cw = csv.writer(si)
     
-    # Create header rows
     header1 = ['NO', 'SUBJECT']
     for cls in classes: header1.extend([cls, ''])
     header1.extend(['Other', '', 'TOTAL'])
