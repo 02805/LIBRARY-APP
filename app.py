@@ -316,22 +316,32 @@ def inventory():
             grid_data[category][matched_class] = {'SB': 0, 'TG': 0}
             
         grid_data[category][matched_class][btype] += qty
-    # Calculate totals
+
+        # Calculate totals
     column_totals = {}
     for cls in classes + ['Other']:
         column_totals[cls] = {'SB': 0, 'TG': 0}
     
+    row_totals = {}
     total_sb_grand = 0
     total_tg_grand = 0
+    
     for cat, cls_data in grid_data.items():
+        row_totals[cat] = {'SB': 0, 'TG': 0}
         for cls, type_data in cls_data.items():
+            # Add to column totals
             column_totals[cls]['SB'] += type_data['SB']
             column_totals[cls]['TG'] += type_data['TG']
+            
+            # Add to row totals
+            row_totals[cat]['SB'] += type_data['SB']
+            row_totals[cat]['TG'] += type_data['TG']
+            
+            # Add to grand totals
             total_sb_grand += type_data['SB']
             total_tg_grand += type_data['TG']
 
-    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes)
-
+    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes)
 @app.route('/export_inventory')
 def export_inventory():
     if 'school_id' not in session: return redirect(url_for('login'))
