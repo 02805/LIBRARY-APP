@@ -341,7 +341,7 @@ def inventory():
             total_sb_grand += type_data['SB']
             total_tg_grand += type_data['TG']
 
-    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes)
+        return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes, all_books=books)
 @app.route('/export_inventory')
 def export_inventory():
     if 'school_id' not in session: return redirect(url_for('login'))
