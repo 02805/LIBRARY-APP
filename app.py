@@ -217,8 +217,8 @@ def edit_book(id):
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
-        c.execute("UPDATE books SET title=%s, author=%s, isbn=%s, quantity=%s, book_code=%s, condition=%s WHERE id=%s",
-                     (request.form['title'], request.form['author'], request.form['isbn'], request.form['quantity'], request.form.get('book_code', ''), request.form.get('condition', ''), id))
+        c.execute("UPDATE books SET title=%s, author=%s, isbn=%s, quantity=%s, book_code=%s, condition=%s, category=%s, book_type=%s WHERE id=%s",
+                     (request.form['title'], request.form['author'], request.form['isbn'], request.form['quantity'], request.form.get('book_code', ''), request.form.get('condition', ''), request.form.get('category', ''), request.form.get('book_type', ''), id))
         conn.commit()
         conn.close()
         return redirect(url_for('books'))
@@ -266,7 +266,7 @@ def export_books():
         cw.writerow([index, book['title'], book['book_code'] or '', book['author'], book['condition'] or 'Good'])
     return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=library_books.csv"})
 
-# ---------- INVENTORY REPORT (SMART GRID) ----------
+# ---------- INVENTORY REPORT ----------
 @app.route('/inventory')
 def inventory():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -274,80 +274,6 @@ def inventory():
     conn = get_db()
     c = conn.cursor()
     
-    if sid == 0:
-        c.execute("SELECT * FROM books")
-    else:
-        c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
-    books = c.fetchall()
-    conn.close()
-    
-    classes = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']
-    grid_data = {}
-    
-    for b in books:
-        title_upper = b['title'].upper()
-        
-        # Use Database Category if available, otherwise guess from title
-        category = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
-        if category == "OTHER":
-            if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
-            elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
-            else: category = title_upper.split()[0].title()
-
-        # Use Database Type (SB/TG) if available
-        btype = 'SB'
-        if b['book_type'] and 'TG' in b['book_type'].upper():
-            btype = 'TG'
-        elif "TEACHER" in title_upper or "TG" in title_upper:
-            btype = 'TG'
-            
-        # Find Class (S1-S6)
-        matched_class = "Other"
-        for i in range(1, 7):
-            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper or f"SENIOR {['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX'][i]}" in title_upper:
-                matched_class = f"S{i}"
-                break
-                
-        qty = b['quantity']
-        
-        if category not in grid_data:
-            grid_data[category] = {}
-        if matched_class not in grid_data[category]:
-            grid_data[category][matched_class] = {'SB': 0, 'TG': 0}
-            
-        grid_data[category][matched_class][btype] += qty
-
-        # Calculate totals
-    column_totals = {}
-    for cls in classes + ['Other']:
-        column_totals[cls] = {'SB': 0, 'TG': 0}
-    
-    row_totals = {}
-    total_sb_grand = 0
-    total_tg_grand = 0
-    
-    for cat, cls_data in grid_data.items():
-        row_totals[cat] = {'SB': 0, 'TG': 0}
-        for cls, type_data in cls_data.items():
-            # Add to column totals
-            column_totals[cls]['SB'] += type_data['SB']
-            column_totals[cls]['TG'] += type_data['TG']
-            
-            # Add to row totals
-            row_totals[cat]['SB'] += type_data['SB']
-            row_totals[cat]['TG'] += type_data['TG']
-            
-            # Add to grand totals
-            total_sb_grand += type_data['SB']
-            total_tg_grand += type_data['TG']
-
-        return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes, all_books=books)
-@app.route('/export_inventory')
-def export_inventory():
-    if 'school_id' not in session: return redirect(url_for('login'))
-    sid = session['school_id']
-    conn = get_db()
-    c = conn.cursor()
     if sid == 0: c.execute("SELECT * FROM books")
     else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
     books = c.fetchall()
@@ -358,14 +284,15 @@ def export_inventory():
     
     for b in books:
         title_upper = b['title'].upper()
-        
         category = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
         if category == "OTHER":
             if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
             elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
             else: category = title_upper.split()[0].title()
-
-        btype = 'TG' if (b['book_type'] and 'TG' in b['book_type'].upper()) or "TEACHER" in title_upper or "TG" in title_upper else 'SB'
+        
+        btype = 'SB'
+        if b['book_type'] and 'TG' in b['book_type'].upper(): btype = 'TG'
+        elif "TEACHER" in title_upper or "TG" in title_upper: btype = 'TG'
             
         matched_class = "Other"
         for i in range(1, 7):
@@ -379,34 +306,24 @@ def export_inventory():
         if matched_class not in grid_data[category]: grid_data[category][matched_class] = {'SB': 0, 'TG': 0}
         grid_data[category][matched_class][btype] += qty
 
-    si = StringIO()
-    cw = csv.writer(si)
+    column_totals = {}
+    for cls in classes + ['Other']: column_totals[cls] = {'SB': 0, 'TG': 0}
     
-    header1 = ['NO', 'SUBJECT']
-    for cls in classes: header1.extend([cls, ''])
-    header1.extend(['Other', '', 'TOTAL'])
-    header2 = ['', '']
-    for cls in classes: header2.extend(['SB', 'TG'])
-    header2.extend(['SB', 'TG', ''])
-    cw.writerow(header1)
-    cw.writerow(header2)
+    row_totals = {}
+    total_sb_grand = 0
+    total_tg_grand = 0
     
-    row_num = 1
-    for cat, cls_data in sorted(grid_data.items()):
-        row = [row_num, cat]
-        cat_total = 0
-        for cls in classes:
-            sb = cls_data.get(cls, {}).get('SB', 0)
-            tg = cls_data.get(cls, {}).get('TG', 0)
-            row.extend([sb, tg])
-            cat_total += sb + tg
-        o_sb = cls_data.get('Other', {}).get('SB', 0)
-        o_tg = cls_data.get('Other', {}).get('TG', 0)
-        row.extend([o_sb, o_tg, cat_total])
-        cw.writerow(row)
-        row_num += 1
-        
-    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=inventory_matrix.csv"})
+    for cat, cls_data in grid_data.items():
+        row_totals[cat] = {'SB': 0, 'TG': 0}
+        for cls, type_data in cls_data.items():
+            column_totals[cls]['SB'] += type_data['SB']
+            column_totals[cls]['TG'] += type_data['TG']
+            row_totals[cat]['SB'] += type_data['SB']
+            row_totals[cat]['TG'] += type_data['TG']
+            total_sb_grand += type_data['SB']
+            total_tg_grand += type_data['TG']
+
+    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes, all_books=books)
 
 # ---------- STUDENTS ----------
 @app.route('/students')
