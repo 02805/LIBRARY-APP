@@ -316,20 +316,21 @@ def inventory():
             grid_data[category][matched_class] = {'SB': 0, 'TG': 0}
             
         grid_data[category][matched_class][btype] += qty
-
     # Calculate totals
     column_totals = {}
     for cls in classes + ['Other']:
         column_totals[cls] = {'SB': 0, 'TG': 0}
     
-    grand_total = 0
+    total_sb_grand = 0
+    total_tg_grand = 0
     for cat, cls_data in grid_data.items():
         for cls, type_data in cls_data.items():
             column_totals[cls]['SB'] += type_data['SB']
             column_totals[cls]['TG'] += type_data['TG']
-            grand_total += type_data['SB'] + type_data['TG']
+            total_sb_grand += type_data['SB']
+            total_tg_grand += type_data['TG']
 
-    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, grand_total=grand_total, classes=classes)
+    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes)
 
 @app.route('/export_inventory')
 def export_inventory():
