@@ -266,23 +266,29 @@ def export_books():
         cw.writerow([index, book['title'], book['book_code'] or '', book['author'], book['condition'] or 'Good'])
     return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=library_books.csv"})
 
-# ---------- INVENTORY REPORT ----------
+# ---------- INVENTORY REPORT (SMART GRID & PAGINATION) ----------
 @app.route('/inventory')
 def inventory():
     if 'school_id' not in session: return redirect(url_for('login'))
     sid = session['school_id']
+    
+    search_query = request.args.get('search', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = 15
+    offset = (page - 1) * per_page
+
     conn = get_db()
     c = conn.cursor()
     
+    # 1. Fetch all books for Grid Data (No pagination for the grid)
     if sid == 0: c.execute("SELECT * FROM books")
     else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
-    books = c.fetchall()
-    conn.close()
+    all_books = c.fetchall()
     
     classes = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']
     grid_data = {}
     
-    for b in books:
+    for b in all_books:
         title_upper = b['title'].upper()
         category = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
         if category == "OTHER":
@@ -323,7 +329,42 @@ def inventory():
             total_sb_grand += type_data['SB']
             total_tg_grand += type_data['TG']
 
-    return render_template('inventory.html', grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes, all_books=books)
+    # 2. Fetch Grouped Books for Manage Tab
+    # Group by title, author, isbn, category, book_type and sum the quantities
+    if sid == 0:
+        base_query = "SELECT MIN(id) as id, title, author, isbn, category, book_type, SUM(quantity) as quantity FROM books"
+        count_query = "SELECT COUNT(*) FROM (SELECT DISTINCT title, author, isbn, category, book_type FROM books) as grouped"
+    else:
+        base_query = "SELECT MIN(id) as id, title, author, isbn, category, book_type, SUM(quantity) as quantity FROM books WHERE school_id=%s"
+        count_query = "SELECT COUNT(*) FROM (SELECT DISTINCT title, author, isbn, category, book_type FROM books WHERE school_id=%s) as grouped"
+    
+    if search_query:
+        # Add search filter to both queries
+        search_filter = " AND (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)"
+        if sid == 0:
+            base_query += " WHERE (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)"
+            count_query = "SELECT COUNT(*) FROM (SELECT DISTINCT title, author, isbn, category, book_type FROM books WHERE (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)) as grouped"
+            params = ('%' + search_query + '%', '%' + search_query + '%', '%' + search_query + '%')
+        else:
+            base_query += " AND (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)"
+            count_query = "SELECT COUNT(*) FROM (SELECT DISTINCT title, author, isbn, category, book_type FROM books WHERE school_id=%s AND (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)) as grouped"
+            params = (sid, '%' + search_query + '%', '%' + search_query + '%', '%' + search_query + '%')
+    else:
+        params = () if sid == 0 else (sid,)
+
+    c.execute(count_query, params)
+    total_items = c.fetchone()[0]
+    total_pages = (total_items + per_page - 1) // per_page
+
+    base_query += " GROUP BY title, author, isbn, category, book_type ORDER BY title LIMIT %s OFFSET %s"
+    c.execute(base_query, params + (per_page, offset))
+    grouped_books = c.fetchall()
+
+    conn.close()
+    return render_template('inventory.html', 
+                           grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, 
+                           total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes, 
+                           grouped_books=grouped_books, search_query=search_query, page=page, total_pages=total_pages)
 
 # ---------- STUDENTS ----------
 @app.route('/students')
