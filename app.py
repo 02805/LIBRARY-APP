@@ -227,46 +227,81 @@ def edit_book(id):
     conn.close()
     return render_template('edit_book.html', book=book)
 
-@app.route('/delete_book/<int:id>')
-def delete_book(id):
+# ---------- NEW: EDIT & DELETE GROUP ----------
+@app.route('/edit_group', methods=['GET', 'POST'])
+def edit_group():
     if 'school_id' not in session: return redirect(url_for('login'))
+    
+    title = request.args.get('title')
+    category = request.args.get('category')
+    book_type = request.args.get('book_type')
+    
     conn = get_db()
     c = conn.cursor()
-    c.execute("DELETE FROM books WHERE id=%s", (id,))
+    
+    if request.method == 'POST':
+        new_qty = int(request.form['quantity'])
+        new_title = request.form['title']
+        new_author = request.form['author']
+        new_category = request.form['category']
+        new_book_type = request.form['book_type']
+        
+        c.execute("SELECT id, book_code FROM books WHERE title=%s AND category=%s AND book_type=%s ORDER BY id ASC", (title, category, book_type))
+        current_books = c.fetchall()
+        current_count = len(current_books)
+        
+        c.execute("UPDATE books SET title=%s, author=%s, category=%s, book_type=%s WHERE title=%s AND category=%s AND book_type=%s", 
+                  (new_title, new_author, new_category, new_book_type, title, category, book_type))
+        
+        if new_qty > current_count:
+            diff = new_qty - current_count
+            prefix = new_title[:2].upper()
+            last_code_num = 0
+            for b in current_books:
+                if b['book_code']:
+                    try:
+                        num = int(b['book_code'].split(' ')[1])
+                        if num > last_code_num: last_code_num = num
+                    except: pass
+            
+            for i in range(1, diff + 1):
+                new_code = f"{prefix} {last_code_num + i:02d}"
+                c.execute("INSERT INTO books (school_id, title, author, category, book_type, quantity, book_code, condition) VALUES (%s, %s, %s, %s, %s, 1, %s, 'Good')",
+                          (session['school_id'], new_title, new_author, new_category, new_book_type, new_code))
+                          
+        elif new_qty < current_count:
+            diff = current_count - new_qty
+            books_to_delete = current_books[-diff:]
+            for b in books_to_delete:
+                c.execute("DELETE FROM books WHERE id=%s", (b['id'],))
+                
+        conn.commit()
+        conn.close()
+        return redirect(url_for('inventory'))
+
+    c.execute("SELECT * FROM books WHERE title=%s AND category=%s AND book_type=%s LIMIT 1", (title, category, book_type))
+    book = c.fetchone()
+    c.execute("SELECT COUNT(*) FROM books WHERE title=%s AND category=%s AND book_type=%s", (title, category, book_type))
+    total_qty = c.fetchone()[0]
+    conn.close()
+    return render_template('edit_group.html', book=book, total_qty=total_qty, title=title, category=category, book_type=book_type)
+
+@app.route('/delete_group', methods=['POST'])
+def delete_group():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    
+    title = request.form['title']
+    category = request.form['category']
+    book_type = request.form['book_type']
+    
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM books WHERE title=%s AND category=%s AND book_type=%s", (title, category, book_type))
     conn.commit()
     conn.close()
-    return redirect(url_for('books'))
+    return redirect(url_for('inventory'))
 
-@app.route('/delete_all_books')
-def delete_all_books():
-    if 'school_id' not in session: return redirect(url_for('login'))
-    sid = session['school_id']
-    conn = get_db()
-    c = conn.cursor()
-    if sid == 0: c.execute("DELETE FROM books")
-    else: c.execute("DELETE FROM books WHERE school_id=%s", (sid,))
-    conn.commit()
-    conn.close()
-    return redirect(url_for('books'))
-
-@app.route('/export_books')
-def export_books():
-    if 'school_id' not in session: return redirect(url_for('login'))
-    sid = session['school_id']
-    conn = get_db()
-    c = conn.cursor()
-    if sid == 0: c.execute("SELECT * FROM books")
-    else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
-    books = c.fetchall()
-    conn.close()
-    si = StringIO()
-    cw = csv.writer(si)
-    cw.writerow(['NO', 'Book Title', 'Book Code', 'Author', 'Condition'])
-    for index, book in enumerate(books, start=1):
-        cw.writerow([index, book['title'], book['book_code'] or '', book['author'], book['condition'] or 'Good'])
-    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=library_books.csv"})
-
-# ---------- INVENTORY REPORT (SMART GRID & PAGINATION) ----------
+# ---------- INVENTORY REPORT ----------
 @app.route('/inventory')
 def inventory():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -280,7 +315,6 @@ def inventory():
     conn = get_db()
     c = conn.cursor()
     
-    # 1. Fetch all books for Grid Data (No pagination for the grid)
     if sid == 0: c.execute("SELECT * FROM books")
     else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
     all_books = c.fetchall()
@@ -329,8 +363,6 @@ def inventory():
             total_sb_grand += type_data['SB']
             total_tg_grand += type_data['TG']
 
-    # 2. Fetch Grouped Books for Manage Tab
-    # Group by title, author, isbn, category, book_type and sum the quantities
     if sid == 0:
         base_query = "SELECT MIN(id) as id, title, author, isbn, category, book_type, SUM(quantity) as quantity FROM books"
         count_query = "SELECT COUNT(*) FROM (SELECT DISTINCT title, author, isbn, category, book_type FROM books) as grouped"
@@ -339,8 +371,6 @@ def inventory():
         count_query = "SELECT COUNT(*) FROM (SELECT DISTINCT title, author, isbn, category, book_type FROM books WHERE school_id=%s) as grouped"
     
     if search_query:
-        # Add search filter to both queries
-        search_filter = " AND (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)"
         if sid == 0:
             base_query += " WHERE (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)"
             count_query = "SELECT COUNT(*) FROM (SELECT DISTINCT title, author, isbn, category, book_type FROM books WHERE (title ILIKE %s OR category ILIKE %s OR book_type ILIKE %s)) as grouped"
@@ -365,6 +395,45 @@ def inventory():
                            grid_data=grid_data, column_totals=column_totals, row_totals=row_totals, 
                            total_sb=total_sb_grand, total_tg=total_tg_grand, classes=classes, 
                            grouped_books=grouped_books, search_query=search_query, page=page, total_pages=total_pages)
+
+@app.route('/delete_book/<int:id>')
+def delete_book(id):
+    if 'school_id' not in session: return redirect(url_for('login'))
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM books WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('books'))
+
+@app.route('/delete_all_books')
+def delete_all_books():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    if sid == 0: c.execute("DELETE FROM books")
+    else: c.execute("DELETE FROM books WHERE school_id=%s", (sid,))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('books'))
+
+@app.route('/export_books')
+def export_books():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    if sid == 0: c.execute("SELECT * FROM books")
+    else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
+    books = c.fetchall()
+    conn.close()
+    si = StringIO()
+    cw = csv.writer(si)
+    cw.writerow(['NO', 'Book Title', 'Book Code', 'Author', 'Condition'])
+    for index, book in enumerate(books, start=1):
+        cw.writerow([index, book['title'], book['book_code'] or '', book['author'], book['condition'] or 'Good'])
+    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=library_books.csv"})
 
 # ---------- STUDENTS ----------
 @app.route('/students')
