@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div style="max-width: 600px; margin: 0 auto;">
+    <h2>✏️ Edit Book Group</h2>
+    <p style="color: gray; margin-bottom: 20px;">Editing all copies of <strong>{{ title }}</strong></p>
+
+    <div class="stat-card" style="border-top: 5px solid #3498db; text-align: left; padding: 30px;">
+        <form method="POST">
+            <div style="margin-bottom: 15px;">
+                <label>Book Title:</label><br>
+                <input type="text" name="title" value="{{ book.title }}" required style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label>Author:</label><br>
+                <input type="text" name="author" value="{{ book.author }}" required style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <label>Category:</label><br>
+                <input type="text" name="category" value="{{ book.category or '' }}" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <label>Type (SB or TG):</label><br>
+                <input type="text" name="book_type" value="{{ book.book_type or '' }}" style="width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 5px;">
+            </div>
+
+            <div style="margin-bottom: 20px; background: #e8f4f8; padding: 15px; border-radius: 5px;">
+                <label style="font-weight: bold; color: #2c3e50; font-size: 16px;">Total Quantity in Library:</label><br>
+                <input type="number" name="quantity" value="{{ total_qty }}" min="0" required style="width: 100%; padding: 10px; border: 1px solid #3498db; border-radius: 5px; font-size: 18px; font-weight: bold; margin-top: 5px;">
+                <p style="font-size: 12px; color: #555; margin-top: 5px;">Changing this number will automatically add or remove individual book codes.</p>
+            </div>
+
+            <button type="submit" style="background:#27ae60; width: 100%; padding: 12px; font-size: 16px; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">Save Changes</button>
+        </form>
+    </div>
+
+    <!-- Danger Zone for Deleting -->
+    <div style="margin-top: 30px; border: 2px solid #e74c3c; padding: 20px; border-radius: 8px; background: #fdf2f2;">
+        <h3 style="color: #e74c3c; margin-top: 0;">Danger Zone</h3>
+        <p style="font-size: 13px; color: #555;">If you uploaded this book by mistake, you can delete all <strong>{{ total_qty }}</strong> copies permanently.</p>
+        
+        <form method="POST" action="/delete_group" onsubmit="return confirm('⚠️ WARNING: Are you absolutely sure you want to delete ALL {{ total_qty }} copies of this book? This cannot be undone.');">
+            <input type="hidden" name="title" value="{{ title }}">
+            <input type="hidden" name="category" value="{{ category }}">
+            <input type="hidden" name="book_type" value="{{ book_type }}">
+            <button type="submit" style="background:#e74c3c; width: 100%; padding: 12px; font-size: 16px; color: white; border: none; border-radius: 5px; font-weight: bold; cursor: pointer;">🗑️ Delete All Copies</button>
+        </form>
+    </div>
+    
+    <div style="text-align: center; margin-top: 20px;">
+        <a href="/inventory" style="color: #7f8c8d; text-decoration: none; font-weight: bold;">Cancel and Go Back</a>
+    </div>
+</div>
+{% endblock %}
