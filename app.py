@@ -324,10 +324,13 @@ def inventory():
     
     for b in all_books:
         title_upper = b['title'].upper()
-                raw_cat = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
+        
+        # SMART CATEGORY (Fixes "Music" vs "Musics")
+        raw_cat = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
         if raw_cat.endswith('s') and not raw_cat.endswith('ss'):
             raw_cat = raw_cat[:-1]
         category = raw_cat
+        
         if category == "OTHER":
             if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
             elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
