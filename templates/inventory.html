@@ -102,9 +102,8 @@
                     <td style="padding: 10px; border: 1px solid #ddd;">{{ b.book_type or '-' }}</td>
                     <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #27ae60; font-size: 16px;">{{ b.quantity }}</td>
                     <td style="padding: 10px; border: 1px solid #ddd;">
-                        <!-- Note: Editing one will only edit the first copy. To edit all copies, we would need a different approach, but for now this links to the ID -->
-                        <a href="/edit_book/{{ b.id }}" style="color:#3498db; text-decoration:none; font-weight:bold; margin-right: 10px;">Edit</a>
-                        <!-- Deleting one will only delete one copy if quantity > 1, but we won't add a delete button here to avoid confusion. They can delete from Books page. -->
+                        <!-- THE FIXED LINK -->
+                        <a href="/edit_group?title={{ b.title | urlencode }}&category={{ b.category | urlencode }}&book_type={{ b.book_type | urlencode }}" style="color:#3498db; text-decoration:none; font-weight:bold; margin-right: 10px;">Edit</a>
                     </td>
                 </tr>
                 {% else %}
@@ -134,7 +133,6 @@
 </style>
 
 <script>
-    // Check URL parameters to see which tab should be open
     window.onload = function() {
         var urlParams = new URLSearchParams(window.location.search);
         if (urlParams.has('search') || urlParams.has('page') || urlParams.get('tab') === 'books') {
