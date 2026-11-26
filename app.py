@@ -969,7 +969,75 @@ def update_password():
     conn.commit()
     conn.close()
     return redirect(url_for('profile'))
+    @app.route('/export_inventory')
+def export_inventory():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    conn = get_db()
+    c = conn.cursor()
+    if sid == 0: c.execute("SELECT * FROM books")
+    else: c.execute("SELECT * FROM books WHERE school_id=%s", (sid,))
+    books = c.fetchall()
+    conn.close()
+    
+    classes = ['S1', 'S2', 'S3', 'S4', 'S5', 'S6']
+    grid_data = {}
+    
+    for b in books:
+        title_upper = b['title'].upper()
+        
+        raw_cat = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
+        if raw_cat.endswith('s') and not raw_cat.endswith('ss'):
+            raw_cat = raw_cat[:-1]
+        category = raw_cat
+        
+        if category == "OTHER":
+            if " FOR " in title_upper: category = title_upper.split(" FOR ")[0].strip().title()
+            elif " AND " in title_upper: category = title_upper.split(" AND ")[0].strip().title()
+            else: category = title_upper.split()[0].title()
 
+        btype = 'TG' if (b['book_type'] and 'TG' in b['book_type'].upper()) or "TEACHER" in title_upper or "TG" in title_upper else 'SB'
+            
+        matched_class = "Other"
+        for i in range(1, 7):
+            if f"S{i}" in title_upper or f"SENIOR {i}" in title_upper or f"SENIOR {['ZERO','ONE','TWO','THREE','FOUR','FIVE','SIX'][i]}" in title_upper:
+                matched_class = f"S{i}"
+                break
+                
+        qty = b['quantity']
+        
+        if category not in grid_data: grid_data[category] = {}
+        if matched_class not in grid_data[category]: grid_data[category][matched_class] = {'SB': 0, 'TG': 0}
+        grid_data[category][matched_class][btype] += qty
+
+    si = StringIO()
+    cw = csv.writer(si)
+    
+    header1 = ['NO', 'SUBJECT']
+    for cls in classes: header1.extend([cls, ''])
+    header1.extend(['Other', '', 'TOTAL'])
+    header2 = ['', '']
+    for cls in classes: header2.extend(['SB', 'TG'])
+    header2.extend(['SB', 'TG', ''])
+    cw.writerow(header1)
+    cw.writerow(header2)
+    
+    row_num = 1
+    for cat, cls_data in sorted(grid_data.items()):
+        row = [row_num, cat]
+        cat_total = 0
+        for cls in classes:
+            sb = cls_data.get(cls, {}).get('SB', 0)
+            tg = cls_data.get(cls, {}).get('TG', 0)
+            row.extend([sb, tg])
+            cat_total += sb + tg
+        o_sb = cls_data.get('Other', {}).get('SB', 0)
+        o_tg = cls_data.get('Other', {}).get('TG', 0)
+        row.extend([o_sb, o_tg, cat_total])
+        cw.writerow(row)
+        row_num += 1
+        
+    return Response(si.getvalue(), mimetype="text/csv", headers={"Content-Disposition":"attachment;filename=inventory_matrix.csv"})
 # ---------- RUN ----------
 if __name__ == '__main__':
     init_db()
