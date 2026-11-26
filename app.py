@@ -227,7 +227,43 @@ def edit_book(id):
     conn.close()
     return render_template('edit_book.html', book=book)
 
-# ---------- NEW: EDIT & DELETE GROUP ----------
+# ---------- NEW: MANAGE INDIVIDUAL COPIES ----------
+@app.route('/manage_copies')
+def manage_copies():
+    if 'school_id' not in session: return redirect(url_for('login'))
+    sid = session['school_id']
+    title = request.args.get('title')
+    category = request.args.get('category')
+    book_type = request.args.get('book_type')
+    
+    conn = get_db()
+    c = conn.cursor()
+    if sid == 0:
+        c.execute("SELECT * FROM books WHERE title=%s AND category=%s AND book_type=%s ORDER BY book_code ASC", (title, category, book_type))
+    else:
+        c.execute("SELECT * FROM books WHERE school_id=%s AND title=%s AND category=%s AND book_type=%s ORDER BY book_code ASC", (sid, title, category, book_type))
+    copies = c.fetchall()
+    conn.close()
+    return render_template('manage_copies.html', copies=copies, title=title, category=category, book_type=book_type)
+
+@app.route('/mark_lost/<int:id>')
+def mark_lost(id):
+    if 'school_id' not in session: return redirect(url_for('login'))
+    title = request.args.get('title')
+    category = request.args.get('category')
+    book_type = request.args.get('book_type')
+    
+    conn = get_db()
+    c = conn.cursor()
+    # Delete this specific copy
+    c.execute("DELETE FROM books WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+    
+    # Redirect back to the copies page
+    return redirect(url_for('manage_copies', title=title, category=category, book_type=book_type))
+
+# ---------- EDIT & DELETE GROUP ----------
 @app.route('/edit_group', methods=['GET', 'POST'])
 def edit_group():
     if 'school_id' not in session: return redirect(url_for('login'))
@@ -325,7 +361,6 @@ def inventory():
     for b in all_books:
         title_upper = b['title'].upper()
         
-        # SMART CATEGORY (Fixes "Music" vs "Musics")
         raw_cat = b['category'].strip().title() if b['category'] and b['category'].strip() else "OTHER"
         if raw_cat.endswith('s') and not raw_cat.endswith('ss'):
             raw_cat = raw_cat[:-1]
